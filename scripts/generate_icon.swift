@@ -62,7 +62,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let bounds = CGRect(x: 0, y: 0, width: s, height: s)
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 1. BACKGROUND — white rounded rect
+    // 1. BACKGROUND — white rounded rect with subtle warm gradient
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     let cornerRadius = s * 0.22
@@ -70,11 +70,10 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let bgRect = bounds.insetBy(dx: bgInset, dy: bgInset)
     let bgPath = roundedRectPath(bgRect, radius: cornerRadius)
 
-    // Clean white with a very subtle warm gradient for depth
     let bgColors: [CGColor] = [
         CGColor(red: 1.00, green: 1.00, blue: 1.00, alpha: 1.0),
         CGColor(red: 0.98, green: 0.98, blue: 0.99, alpha: 1.0),
-        CGColor(red: 0.95, green: 0.95, blue: 0.96, alpha: 1.0),
+        CGColor(red: 0.94, green: 0.94, blue: 0.96, alpha: 1.0),
     ]
     let bgGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                             colors: bgColors as CFArray,
@@ -90,167 +89,310 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ctx.restoreGState()
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 2. COMPOSITION LAYOUT — K [lock] V centred symmetrically
+    // 2. LAYOUT — K [padlock] V
     //
-    //    The lock sits at the exact horizontal centre.
-    //    K is on the left, V mirrors on the right.
-    //    Both letters' inner edges "hug" the lock so they feel connected.
+    //    The padlock is large, roughly the same height as the letters.
+    //    K and V are tightly positioned against the lock body.
+    //    The lock has a tall, clearly visible U-shaped shackle.
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     let centerX = s * 0.50
-    // Shift the whole K-lock-V composition slightly above true centre
-    // so there is room for the "KeyValue" label underneath.
-    let centerY = s * 0.52
+    let centerY = s * 0.53   // slightly above true centre for label room
 
-    // Colour palette — sophisticated dark slate-blue
-    let darkSlate   = CGColor(red: 0.18, green: 0.22, blue: 0.33, alpha: 1.0)
-    let midSlate    = CGColor(red: 0.24, green: 0.29, blue: 0.40, alpha: 1.0)
-    // lightSlate reserved for future use
-    // let lightSlate = CGColor(red: 0.32, green: 0.37, blue: 0.48, alpha: 1.0)
-    let goldAccent  = CGColor(red: 0.82, green: 0.70, blue: 0.38, alpha: 1.0)
-    let goldBright  = CGColor(red: 0.92, green: 0.82, blue: 0.48, alpha: 1.0)
+    // ── Colour palette ──
+    // Lock body: deep navy-blue metallic (NOT black, NOT grey)
+    let lockDark    = CGColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
+    let lockMid     = CGColor(red: 0.22, green: 0.30, blue: 0.48, alpha: 1.0)
+    let lockLight   = CGColor(red: 0.32, green: 0.42, blue: 0.60, alpha: 1.0)
+    let lockBright  = CGColor(red: 0.42, green: 0.52, blue: 0.70, alpha: 1.0)
+
+    // Shackle: slightly lighter steel-blue
+    let shackleDark = CGColor(red: 0.28, green: 0.38, blue: 0.55, alpha: 1.0)
+    let shackleMid  = CGColor(red: 0.40, green: 0.50, blue: 0.66, alpha: 1.0)
+    let shackleHi   = CGColor(red: 0.55, green: 0.64, blue: 0.78, alpha: 1.0)
+
+    // Gold accent for keyhole
+    let goldDeep    = CGColor(red: 0.72, green: 0.58, blue: 0.18, alpha: 1.0)
+    let goldMain    = CGColor(red: 0.88, green: 0.74, blue: 0.28, alpha: 1.0)
+    let goldBright  = CGColor(red: 1.00, green: 0.90, blue: 0.45, alpha: 1.0)
+    let goldGlow    = CGColor(red: 1.00, green: 0.88, blue: 0.40, alpha: 1.0)
+
+    // Letter colour
+    let letterColor = CGColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 3. CENTRAL LOCK — the centrepiece that connects K and V
+    // 3. PADLOCK — The centrepiece
     //
-    //    Drawn with Core Graphics for pixel-perfect control.
-    //    Consists of: body (rounded rect) + shackle (arc) + keyhole
+    //    Proportions inspired by a real padlock:
+    //      - Body: wide, ~60% of lock height
+    //      - Shackle: tall U-shape, ~50% of lock height, clearly above body
+    //      - Total lock height ≈ letter height
+    //
+    //    The lock is drawn as filled shapes (not stroked arcs).
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    let lockBodyW = s * 0.190
-    let lockBodyH = s * 0.155
-    let lockBodyR = lockBodyW * 0.24
-    let lockBodyCY = centerY - s * 0.035     // body is slightly below composition centre
-    let lockBodyTopY = lockBodyCY + lockBodyH / 2
-    let lockBodyBotY = lockBodyCY - lockBodyH / 2
+    // Total lock height (body + shackle) should be close to letter height
+    let lockTotalH  = s * 0.30
+    let lockBodyW   = s * 0.18
+    let lockBodyH   = lockTotalH * 0.55
+    let lockBodyR   = lockBodyW * 0.14
 
-    // ── Lock body ──
+    // Body position — lower portion of the lock
+    let lockBodyBotY = centerY - lockTotalH * 0.45
+    let lockBodyTopY = lockBodyBotY + lockBodyH
+    let lockBodyCY   = (lockBodyBotY + lockBodyTopY) / 2
+
+    // Shackle geometry — the U sits on top of the body
+    let shackleBarW    = s * 0.020       // thickness of each vertical bar
+    let shackleInnerW  = lockBodyW * 0.65 // inner gap width
+    let shackleOuterW  = shackleInnerW + shackleBarW * 2
+    let shackleOuterR  = shackleOuterW / 2
+    let shackleInnerR  = shackleInnerW / 2
+    let shackleArcCY   = lockBodyTopY    // arc centre sits at body top
+    let shackleTopY    = shackleArcCY + shackleOuterR // very top of shackle
+
+    // ── 3a. Golden glow behind the entire lock (subtle halo) ──
+    ctx.saveGState()
+    let haloGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                              colors: [
+                                  CGColor(red: 1.0, green: 0.88, blue: 0.40, alpha: 0.10),
+                                  CGColor(red: 1.0, green: 0.88, blue: 0.40, alpha: 0.0),
+                              ] as CFArray, locations: [0.0, 1.0])!
+    ctx.drawRadialGradient(haloGrad,
+                           startCenter: CGPoint(x: centerX, y: lockBodyCY),
+                           startRadius: 0,
+                           endCenter: CGPoint(x: centerX, y: lockBodyCY),
+                           endRadius: lockTotalH * 0.8,
+                           options: [])
+    ctx.restoreGState()
+
+    // ── 3b. Draw shackle (behind the body) ──
+    // Build the shackle as a closed filled path:
+    //   left bar → outer arc → right bar → inner arc (reversed)
+    let shackleFill = CGMutablePath()
+
+    let barLOuterX = centerX - shackleOuterW / 2
+    let barLInnerX = centerX - shackleInnerW / 2
+    let barRInnerX = centerX + shackleInnerW / 2
+    let barROuterX = centerX + shackleOuterW / 2
+    let barBotY    = lockBodyTopY - lockBodyH * 0.12  // bars extend slightly into body
+
+    // Left outer edge, going up
+    shackleFill.move(to: CGPoint(x: barLOuterX, y: barBotY))
+    shackleFill.addLine(to: CGPoint(x: barLOuterX, y: shackleArcCY))
+    // Outer arc left → right (counter-clockwise in screen coords = clockwise in CG)
+    shackleFill.addArc(center: CGPoint(x: centerX, y: shackleArcCY),
+                       radius: shackleOuterR,
+                       startAngle: .pi,
+                       endAngle: 0,
+                       clockwise: false)
+    // Right outer edge, going down
+    shackleFill.addLine(to: CGPoint(x: barROuterX, y: barBotY))
+    // Across bottom of right bar
+    shackleFill.addLine(to: CGPoint(x: barRInnerX, y: barBotY))
+    // Right inner edge, going up
+    shackleFill.addLine(to: CGPoint(x: barRInnerX, y: shackleArcCY))
+    // Inner arc right → left (reversed)
+    shackleFill.addArc(center: CGPoint(x: centerX, y: shackleArcCY),
+                       radius: shackleInnerR,
+                       startAngle: 0,
+                       endAngle: .pi,
+                       clockwise: true)
+    // Left inner edge, going down
+    shackleFill.addLine(to: CGPoint(x: barLInnerX, y: barBotY))
+    shackleFill.closeSubpath()
+
+    // Shackle drop shadow
+    ctx.saveGState()
+    ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.006),
+                  blur: s * 0.018,
+                  color: CGColor(red: 0.06, green: 0.10, blue: 0.22, alpha: 0.40))
+
+    // Shackle gradient fill (metallic: left-dark → center-bright → right-dark)
+    ctx.addPath(shackleFill)
+    ctx.clip()
+    let shackleGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                 colors: [shackleDark, shackleMid, shackleHi, shackleMid, shackleDark] as CFArray,
+                                 locations: [0.0, 0.25, 0.45, 0.70, 1.0])!
+    ctx.drawLinearGradient(shackleGrad,
+                           start: CGPoint(x: barLOuterX, y: shackleArcCY),
+                           end: CGPoint(x: barROuterX, y: shackleArcCY),
+                           options: [])
+    ctx.restoreGState()
+
+    // Shackle top highlight — bright arc along the very top
+    ctx.saveGState()
+    let shackleHlArc = CGMutablePath()
+    shackleHlArc.addArc(center: CGPoint(x: centerX, y: shackleArcCY),
+                        radius: (shackleOuterR + shackleInnerR) / 2,
+                        startAngle: .pi * 0.80,
+                        endAngle: .pi * 0.20,
+                        clockwise: false)
+    ctx.setStrokeColor(CGColor(red: 0.75, green: 0.82, blue: 0.92, alpha: 0.55))
+    ctx.setLineWidth(shackleBarW * 0.50)
+    ctx.setLineCap(.butt)
+    ctx.addPath(shackleHlArc)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    // Shackle subtle border
+    ctx.saveGState()
+    ctx.addPath(shackleFill)
+    ctx.setStrokeColor(CGColor(red: 0.10, green: 0.16, blue: 0.30, alpha: 0.25))
+    ctx.setLineWidth(s * 0.002)
+    ctx.strokePath()
+    ctx.restoreGState()
+
+    // ── 3c. Lock body — the main rectangle ──
     let lbRect = CGRect(x: centerX - lockBodyW / 2, y: lockBodyBotY,
                         width: lockBodyW, height: lockBodyH)
     let lbPath = roundedRectPath(lbRect, radius: lockBodyR)
 
-    let lockGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                              colors: [midSlate, darkSlate] as CFArray,
-                              locations: [0.0, 1.0])!
-
-    // Drop shadow
+    // Body shadow
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.010),
-                  blur: s * 0.035,
-                  color: CGColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 0.40))
+    ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.008),
+                  blur: s * 0.030,
+                  color: CGColor(red: 0.05, green: 0.08, blue: 0.18, alpha: 0.50))
+
+    // Body gradient (top bright → bottom dark, 3D metallic feel)
     ctx.addPath(lbPath)
     ctx.clip()
-    ctx.drawLinearGradient(lockGrad,
+    let bodyGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                              colors: [lockBright, lockLight, lockMid, lockDark] as CFArray,
+                              locations: [0.0, 0.30, 0.65, 1.0])!
+    ctx.drawLinearGradient(bodyGrad,
                            start: CGPoint(x: centerX, y: lockBodyTopY),
                            end: CGPoint(x: centerX, y: lockBodyBotY),
                            options: [])
     ctx.restoreGState()
 
-    // Inner highlight on top edge of lock body
+    // Body top-edge highlight (bright band for chrome shine)
     ctx.saveGState()
     ctx.addPath(lbPath)
     ctx.clip()
-    let lockHlColors: [CGColor] = [
-        CGColor(red: 1, green: 1, blue: 1, alpha: 0.14),
-        CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
-    ]
-    let lockHlGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                colors: lockHlColors as CFArray, locations: [0.0, 1.0])!
-    ctx.drawLinearGradient(lockHlGrad,
+    let topHlGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                               colors: [
+                                   CGColor(red: 1, green: 1, blue: 1, alpha: 0.28),
+                                   CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
+                               ] as CFArray, locations: [0.0, 1.0])!
+    ctx.drawLinearGradient(topHlGrad,
                            start: CGPoint(x: centerX, y: lockBodyTopY),
-                           end: CGPoint(x: centerX, y: lockBodyCY),
+                           end: CGPoint(x: centerX, y: lockBodyTopY - lockBodyH * 0.25),
                            options: [])
     ctx.restoreGState()
 
-    // Subtle border around lock body
+    // Body left-side specular highlight (vertical chrome stripe)
     ctx.saveGState()
     ctx.addPath(lbPath)
-    ctx.setStrokeColor(CGColor(red: 0.12, green: 0.14, blue: 0.22, alpha: 0.20))
-    ctx.setLineWidth(s * 0.003)
-    ctx.strokePath()
+    ctx.clip()
+    let specX = centerX - lockBodyW * 0.38
+    let specW = lockBodyW * 0.12
+    let specGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                              colors: [
+                                  CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
+                                  CGColor(red: 1, green: 1, blue: 1, alpha: 0.15),
+                                  CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
+                              ] as CFArray, locations: [0.0, 0.5, 1.0])!
+    ctx.drawLinearGradient(specGrad,
+                           start: CGPoint(x: specX, y: lockBodyCY),
+                           end: CGPoint(x: specX + specW, y: lockBodyCY),
+                           options: [])
     ctx.restoreGState()
 
-    // ── Shackle ──
-    let shackleR = lockBodyW * 0.36
-    let shackleThickness = s * 0.034
-
-    let shacklePath = CGMutablePath()
-    shacklePath.addArc(center: CGPoint(x: centerX, y: lockBodyTopY),
-                       radius: shackleR,
-                       startAngle: .pi,
-                       endAngle: 0,
-                       clockwise: false)
-
+    // Body border for definition
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: s * 0.005),
-                  blur: s * 0.015,
-                  color: CGColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 0.30))
-    ctx.setStrokeColor(midSlate)
-    ctx.setLineWidth(shackleThickness)
-    ctx.setLineCap(.round)
-    ctx.addPath(shacklePath)
+    ctx.addPath(lbPath)
+    ctx.setStrokeColor(CGColor(red: 0.10, green: 0.16, blue: 0.28, alpha: 0.30))
+    ctx.setLineWidth(s * 0.0025)
     ctx.strokePath()
     ctx.restoreGState()
 
-    // Shackle highlight (thin white arc on the upper-left portion)
-    let shackleHlPath = CGMutablePath()
-    shackleHlPath.addArc(center: CGPoint(x: centerX, y: lockBodyTopY),
-                         radius: shackleR,
-                         startAngle: .pi * 0.82,
-                         endAngle: .pi * 0.22,
-                         clockwise: false)
+    // Horizontal divider line near top of body (where shackle enters)
+    let divY = lockBodyTopY - lockBodyH * 0.16
     ctx.saveGState()
-    ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.10))
-    ctx.setLineWidth(shackleThickness * 0.40)
-    ctx.setLineCap(.butt)
-    ctx.addPath(shackleHlPath)
+    ctx.move(to: CGPoint(x: centerX - lockBodyW * 0.42, y: divY))
+    ctx.addLine(to: CGPoint(x: centerX + lockBodyW * 0.42, y: divY))
+    ctx.setStrokeColor(CGColor(red: 0.08, green: 0.14, blue: 0.28, alpha: 0.20))
+    ctx.setLineWidth(s * 0.002)
     ctx.strokePath()
     ctx.restoreGState()
 
-    // ── Keyhole — golden accent ──
-    let khCircleR = lockBodyW * 0.10
-    let khCY = lockBodyCY + lockBodyH * 0.10
+    // ── 3d. Keyhole — golden circle + tapered slot ──
 
-    // Circle
+    let khCY = lockBodyCY - lockBodyH * 0.06
+    let khR  = lockBodyW * 0.10
+
+    // Outer golden glow (radial) — the "special effect"
+    ctx.saveGState()
+    let khGlowGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                colors: [
+                                    CGColor(red: 1.0, green: 0.88, blue: 0.35, alpha: 0.40),
+                                    CGColor(red: 1.0, green: 0.85, blue: 0.30, alpha: 0.15),
+                                    CGColor(red: 1.0, green: 0.80, blue: 0.25, alpha: 0.0),
+                                ] as CFArray,
+                                locations: [0.0, 0.45, 1.0])!
+    ctx.drawRadialGradient(khGlowGrad,
+                           startCenter: CGPoint(x: centerX, y: khCY),
+                           startRadius: khR * 0.5,
+                           endCenter: CGPoint(x: centerX, y: khCY),
+                           endRadius: khR * 5.0,
+                           options: [])
+    ctx.restoreGState()
+
+    // Keyhole circle — filled with golden gradient
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.002),
-                  blur: s * 0.008,
-                  color: CGColor(red: 0.70, green: 0.55, blue: 0.15, alpha: 0.50))
-    ctx.setFillColor(goldBright)
-    ctx.fillEllipse(in: CGRect(x: centerX - khCircleR, y: khCY - khCircleR,
-                               width: khCircleR * 2, height: khCircleR * 2))
+                  blur: s * 0.010,
+                  color: CGColor(red: 0.80, green: 0.65, blue: 0.10, alpha: 0.60))
+    let khCircleRect = CGRect(x: centerX - khR, y: khCY - khR,
+                              width: khR * 2, height: khR * 2)
+    let khCirclePath = CGPath(ellipseIn: khCircleRect, transform: nil)
+    let khGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                            colors: [goldBright, goldMain, goldDeep] as CFArray,
+                            locations: [0.0, 0.5, 1.0])!
+    ctx.addPath(khCirclePath)
+    ctx.clip()
+    ctx.drawLinearGradient(khGrad,
+                           start: CGPoint(x: centerX, y: khCY + khR),
+                           end: CGPoint(x: centerX, y: khCY - khR),
+                           options: [])
     ctx.restoreGState()
 
-    // Tapered slot below keyhole circle
-    let slotTopW  = khCircleR * 1.15
-    let slotBotW  = khCircleR * 0.55
-    let slotH     = lockBodyH * 0.28
-    let slotTopY  = khCY - khCircleR * 0.40
+    // Tiny bright highlight spot on keyhole
+    ctx.saveGState()
+    let khSpotR = khR * 0.28
+    let khSpotCY = khCY + khR * 0.35
+    ctx.setFillColor(CGColor(red: 1.0, green: 0.98, blue: 0.82, alpha: 0.65))
+    ctx.fillEllipse(in: CGRect(x: centerX - khSpotR, y: khSpotCY - khSpotR,
+                               width: khSpotR * 2, height: khSpotR * 2))
+    ctx.restoreGState()
+
+    // Tapered slot below keyhole
+    let slotTopW = khR * 0.80
+    let slotBotW = khR * 0.30
+    let slotH    = lockBodyH * 0.22
+    let slotTopY = khCY - khR * 0.45
 
     let slotPath = CGMutablePath()
-    slotPath.move(to: CGPoint(x: centerX - slotTopW / 2, y: slotTopY))
+    slotPath.move(to:    CGPoint(x: centerX - slotTopW / 2, y: slotTopY))
     slotPath.addLine(to: CGPoint(x: centerX + slotTopW / 2, y: slotTopY))
     slotPath.addLine(to: CGPoint(x: centerX + slotBotW / 2, y: slotTopY - slotH))
     slotPath.addLine(to: CGPoint(x: centerX - slotBotW / 2, y: slotTopY - slotH))
     slotPath.closeSubpath()
 
     ctx.saveGState()
-    ctx.setFillColor(goldAccent)
+    ctx.setFillColor(goldDeep)
     ctx.addPath(slotPath)
     ctx.fillPath()
     ctx.restoreGState()
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 4. LETTER "K" — drawn with NSAttributedString for clean typography
-    //
-    //    Uses Georgia (serif) for elegance.  Positioned so its right
-    //    edge visually touches / slightly overlaps the lock's left side.
+    // 4. LETTER "K" — positioned tightly left of the lock body
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    let fontSize = s * 0.36
-    let letterNSColor = NSColor(cgColor: darkSlate) ?? NSColor(red: 0.18, green: 0.22, blue: 0.33, alpha: 1.0)
+    let fontSize = s * 0.34
+    let letterNSColor = NSColor(cgColor: letterColor) ?? NSColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
 
-    // Try serif fonts in preference order
     let serifFont: NSFont = {
         let candidates = ["Georgia-Bold", "TimesNewRomanPS-BoldMT", "Palatino-Bold"]
         for name in candidates {
@@ -267,87 +409,80 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let kText = "K" as NSString
     let kSize = kText.size(withAttributes: letterAttrs)
 
-    // Position K so its right edge is near the lock's left edge
+    // Position K so its right edge hugs the lock body's left edge
     let lockLeftEdge = centerX - lockBodyW / 2
-    let kGap = s * 0.020   // small breathing room
+    let kGap = s * 0.012   // tight gap
     let kX = lockLeftEdge - kGap - kSize.width
-    let kY = centerY - kSize.height / 2 - s * 0.015  // fine-tune vertical alignment
+    // Vertically centre K with the lock body (not shackle)
+    let kY = lockBodyCY - kSize.height * 0.43
 
-    // Shadow behind K
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: s * 0.004, height: -s * 0.004),
-                  blur: s * 0.012,
-                  color: CGColor(red: 0.10, green: 0.12, blue: 0.22, alpha: 0.22))
+    ctx.setShadow(offset: CGSize(width: s * 0.003, height: -s * 0.003),
+                  blur: s * 0.008,
+                  color: CGColor(red: 0.08, green: 0.12, blue: 0.24, alpha: 0.18))
     kText.draw(at: CGPoint(x: kX, y: kY), withAttributes: letterAttrs)
     ctx.restoreGState()
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 5. LETTER "V" — mirror-symmetric to K
+    // 5. LETTER "V" — mirror-symmetric to K, right of lock body
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     let vText = "V" as NSString
-    // V has the same metrics as K for this serif font
-
     let lockRightEdge = centerX + lockBodyW / 2
-    let vGap = s * 0.020
+    let vGap = s * 0.012
     let vX = lockRightEdge + vGap
     let vY = kY  // same baseline as K
 
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: -s * 0.004, height: -s * 0.004),
-                  blur: s * 0.012,
-                  color: CGColor(red: 0.10, green: 0.12, blue: 0.22, alpha: 0.22))
+    ctx.setShadow(offset: CGSize(width: -s * 0.003, height: -s * 0.003),
+                  blur: s * 0.008,
+                  color: CGColor(red: 0.08, green: 0.12, blue: 0.24, alpha: 0.18))
     vText.draw(at: CGPoint(x: vX, y: vY), withAttributes: letterAttrs)
     ctx.restoreGState()
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 6. CONNECTING LINES — subtle horizontal bridges K→lock→V
-    //
-    //    Gradient-faded lines that visually tie the three elements.
-    //    Drawn at the vertical midpoint of the composition.
+    // 6. CONNECTING LINES — subtle gradient bridges K→lock→V
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     let connY = lockBodyCY
-    let connH = s * 0.0055
+    let connH = s * 0.004
 
-    // Left connector: K right edge → lock left edge
+    // Left connector: K → lock
     let leftConnStart = kX + kSize.width + s * 0.002
     let leftConnEnd   = lockLeftEdge - s * 0.002
     if leftConnEnd > leftConnStart {
-        let leftConnRect = CGRect(x: leftConnStart, y: connY - connH / 2,
-                                  width: leftConnEnd - leftConnStart, height: connH)
+        let rect = CGRect(x: leftConnStart, y: connY - connH / 2,
+                          width: leftConnEnd - leftConnStart, height: connH)
         ctx.saveGState()
-        let gradL = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                               colors: [
-                                   CGColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 0.0),
-                                   CGColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 0.35),
-                               ] as CFArray,
-                               locations: [0.0, 1.0])!
-        ctx.addPath(roundedRectPath(leftConnRect, radius: connH / 2))
+        let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                           colors: [
+                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.0),
+                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.28),
+                           ] as CFArray, locations: [0.0, 1.0])!
+        ctx.addPath(roundedRectPath(rect, radius: connH / 2))
         ctx.clip()
-        ctx.drawLinearGradient(gradL,
+        ctx.drawLinearGradient(g,
                                start: CGPoint(x: leftConnStart, y: connY),
                                end: CGPoint(x: leftConnEnd, y: connY),
                                options: [])
         ctx.restoreGState()
     }
 
-    // Right connector: lock right edge → V left edge
+    // Right connector: lock → V
     let rightConnStart = lockRightEdge + s * 0.002
     let rightConnEnd   = vX - s * 0.002
     if rightConnEnd > rightConnStart {
-        let rightConnRect = CGRect(x: rightConnStart, y: connY - connH / 2,
-                                   width: rightConnEnd - rightConnStart, height: connH)
+        let rect = CGRect(x: rightConnStart, y: connY - connH / 2,
+                          width: rightConnEnd - rightConnStart, height: connH)
         ctx.saveGState()
-        let gradR = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                               colors: [
-                                   CGColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 0.35),
-                                   CGColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 0.0),
-                               ] as CFArray,
-                               locations: [0.0, 1.0])!
-        ctx.addPath(roundedRectPath(rightConnRect, radius: connH / 2))
+        let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                           colors: [
+                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.28),
+                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.0),
+                           ] as CFArray, locations: [0.0, 1.0])!
+        ctx.addPath(roundedRectPath(rect, radius: connH / 2))
         ctx.clip()
-        ctx.drawLinearGradient(gradR,
+        ctx.drawLinearGradient(g,
                                start: CGPoint(x: rightConnStart, y: connY),
                                end: CGPoint(x: rightConnEnd, y: connY),
                                options: [])
@@ -355,12 +490,12 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 7. GOLDEN ACCENT LINE — thin decorative rule below the logo mark
+    // 7. GOLDEN ACCENT LINE — decorative rule below the logo
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    let accentY = min(kY, vY) - s * 0.030
-    let accentW = s * 0.36
-    let accentH = s * 0.005
+    let accentY = min(kY, vY) - s * 0.025
+    let accentW = s * 0.32
+    let accentH = s * 0.004
 
     let accentRect = CGRect(x: centerX - accentW / 2, y: accentY,
                             width: accentW, height: accentH)
@@ -368,11 +503,11 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ctx.saveGState()
     let accentGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                 colors: [
-                                    CGColor(red: 0.82, green: 0.70, blue: 0.35, alpha: 0.0),
-                                    CGColor(red: 0.88, green: 0.76, blue: 0.40, alpha: 0.45),
-                                    CGColor(red: 0.92, green: 0.82, blue: 0.48, alpha: 0.55),
-                                    CGColor(red: 0.88, green: 0.76, blue: 0.40, alpha: 0.45),
-                                    CGColor(red: 0.82, green: 0.70, blue: 0.35, alpha: 0.0),
+                                    CGColor(red: 0.88, green: 0.74, blue: 0.28, alpha: 0.0),
+                                    CGColor(red: 0.92, green: 0.78, blue: 0.32, alpha: 0.40),
+                                    CGColor(red: 1.00, green: 0.88, blue: 0.42, alpha: 0.55),
+                                    CGColor(red: 0.92, green: 0.78, blue: 0.32, alpha: 0.40),
+                                    CGColor(red: 0.88, green: 0.74, blue: 0.28, alpha: 0.0),
                                 ] as CFArray,
                                 locations: [0.0, 0.20, 0.5, 0.80, 1.0])!
     ctx.addPath(roundedRectPath(accentRect, radius: accentH / 2))
@@ -384,25 +519,24 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ctx.restoreGState()
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 8. APP NAME — "KeyValue" in a clean light weight below the accent
-    //    Only drawn at sizes where text is legible (>= 64px)
+    // 8. APP NAME — "KeyValue" below the accent line (≥ 64px only)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     if s >= 64 {
-        let labelFontSize = s * 0.068
+        let labelFontSize = s * 0.062
         let labelFont = NSFont.systemFont(ofSize: labelFontSize, weight: .light)
-        let labelColor = NSColor(red: 0.35, green: 0.38, blue: 0.48, alpha: 0.70)
+        let labelColor = NSColor(red: 0.35, green: 0.40, blue: 0.52, alpha: 0.60)
 
         let labelAttrs: [NSAttributedString.Key: Any] = [
             .font: labelFont,
             .foregroundColor: labelColor,
-            .kern: labelFontSize * 0.15,
+            .kern: labelFontSize * 0.14,
         ]
 
         let labelText = "KeyValue" as NSString
         let labelSize = labelText.size(withAttributes: labelAttrs)
         let labelX = (s - labelSize.width) / 2
-        let labelY = accentY - s * 0.020 - labelSize.height
+        let labelY = accentY - s * 0.016 - labelSize.height
 
         labelText.draw(at: CGPoint(x: labelX, y: labelY), withAttributes: labelAttrs)
     }
@@ -413,8 +547,8 @@ func drawIcon(size pixelSize: Int) -> NSImage {
 
     ctx.saveGState()
     ctx.addPath(bgPath)
-    ctx.setStrokeColor(CGColor(red: 0.72, green: 0.73, blue: 0.78, alpha: 0.35))
-    ctx.setLineWidth(s * 0.004)
+    ctx.setStrokeColor(CGColor(red: 0.72, green: 0.73, blue: 0.78, alpha: 0.28))
+    ctx.setLineWidth(s * 0.003)
     ctx.strokePath()
     ctx.restoreGState()
 
@@ -472,7 +606,7 @@ let assetsIconsetDir = projectRoot
     .appendingPathComponent("Assets.xcassets")
     .appendingPathComponent("AppIcon.appiconset")
 
-print("🎨 Generating KeyValue icon — K 🔒 V (white, symmetric, serif)")
+print("🎨 Generating KeyValue icon — K 🔒 V")
 print("   Target: \(iconsetDir.path)")
 
 // Ensure directories exist
@@ -558,5 +692,5 @@ do {
 try? FileManager.default.removeItem(at: tmpIconset)
 
 print("\n✅ Icon generation complete!")
-print("   Design: K 🔒 V — white background, serif K & V, central lock with gold keyhole")
-print("   Symmetric layout, platform-neutral (no Mac branding)")
+print("   Design: K 🔒 V — navy-blue padlock with tall shackle, golden keyhole glow")
+print("   Letters K & V tightly flank the lock, symbolising encrypted key-value data")
