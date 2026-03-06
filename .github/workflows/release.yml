@@ -3,20 +3,20 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'       # Trigger on version tags like v1.0.0
+      - "v*" # Trigger on version tags like v1.0.0
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version override (e.g. 1.2.3)'
+        description: "Version override (e.g. 1.2.3)"
         required: false
 
 permissions:
-  contents: write  # Needed for creating releases
+  contents: write # Needed for creating releases
 
 jobs:
   build:
     name: Build macOS App
-    runs-on: macos-14  # Apple Silicon runner
+    runs-on: macos-14 # Apple Silicon runner
     strategy:
       matrix:
         include:
@@ -30,12 +30,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for version detection
+          fetch-depth: 0 # Full history for version detection
 
       - name: Setup Swift
         uses: swift-actions/setup-swift@v2
         with:
-          swift-version: '5.9'
+          swift-version: "5.9"
 
       - name: Detect version
         id: version
@@ -62,6 +62,17 @@ jobs:
           chmod +x build.sh
           ./build.sh --ci --dmg
 
+      - name: Compute SHA256
+        id: sha
+        working-directory: MacKeyValue/dist
+        run: |
+          DMG_FILE="$(ls *.dmg | head -1)"
+          SHA256="$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')"
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "dmg_file=$DMG_FILE" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA256"
+          echo "DMG: $DMG_FILE"
+
       - name: Upload DMG artefact
         uses: actions/upload-artifact@v4
         with:
@@ -73,6 +84,11 @@ jobs:
         with:
           name: KeyValue-${{ steps.version.outputs.version }}-${{ matrix.arch_name }}-sha256
           path: MacKeyValue/dist/*.sha256
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha256: ${{ steps.sha.outputs.sha256 }}
+      dmg_file: ${{ steps.sha.outputs.dmg_file }}
 
   release:
     name: Create GitHub Release
@@ -98,7 +114,7 @@ jobs:
         with:
           name: KeyValue ${{ github.ref_name }}
           draft: false
-          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') || contains(github.ref, '-alpha') }}
           generate_release_notes: true
           files: |
             artefacts/**/*.dmg
@@ -108,19 +124,29 @@ jobs:
 
             ### 📦 安装方法
 
+            #### 方式一：下载 DMG（推荐）
+
             1. 下载下方的 `.dmg` 文件（根据你的 Mac 芯片选择）
             2. 打开 DMG，将 **KeyValue.app** 拖入 **Applications** 文件夹
             3. 首次打开：右键点击 KeyValue.app → 选择「打开」
 
-            > ⚠️ 本应用是免费开源软件，未经 Apple 付费签名。
+            > ⚠️ 本应用是免费开源软件，采用 ad-hoc 签名。
             > macOS 会在首次打开时提示"无法验证开发者"，
             > 右键 → 打开即可解除限制。
+            > 也可执行：`xattr -cr /Applications/KeyValue.app`
+
+            #### 方式二：Homebrew
+
+            ```bash
+            brew tap aresnasa/tap
+            brew install --cask keyvalue
+            ```
 
             ### 🔐 权限
 
             首次启动后，应用会引导你授予两个系统权限：
-            - **辅助功能** — 用于模拟键盘输入密码
-            - **输入监控** — 用于创建键盘事件
+            - **辅助功能** (Accessibility) — 用于模拟键盘输入密码
+            - **输入监控** (Input Monitoring) — 用于创建键盘事件
 
             ### ☕ 支持
 
@@ -129,4 +155,101 @@ jobs:
             - 请作者喝杯咖啡（应用内 关于 → ☕ 请喝咖啡）
 
             ---
-            **SHA256 校验和** 见随附的 `.sha256` 文件。
+            **SHA256:** `${{ needs.build.outputs.sha256 }}`
+
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-beta') && !contains(github.ref, '-rc') && !contains(github.ref, '-alpha')
+
+    steps:
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: aresnasa/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update Cask formula
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          mkdir -p homebrew-tap/Casks
+
+          cat > homebrew-tap/Casks/keyvalue.rb << CASKEOF
+          cask "keyvalue" do
+            version "${VERSION}"
+            sha256 "${SHA256}"
+
+            url "https://github.com/aresnasa/mac-keyvalue/releases/download/v#{version}/KeyValue-#{version}-apple-silicon.dmg"
+            name "KeyValue"
+            desc "K🔒V — Secure password & key-value manager for macOS"
+            homepage "https://github.com/aresnasa/mac-keyvalue"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            depends_on macos: ">= :ventura"
+
+            app "KeyValue.app"
+
+            postflight do
+              # Remove quarantine attribute for ad-hoc signed app
+              system_command "/usr/bin/xattr",
+                             args: ["-cr", "#{appdir}/KeyValue.app"],
+                             sudo: false
+            end
+
+            zap trash: [
+              "~/Library/Application Support/com.aresnasa.mackeyvalue",
+              "~/Library/Preferences/com.aresnasa.mackeyvalue.plist",
+              "~/Library/Caches/com.aresnasa.mackeyvalue",
+            ]
+
+            caveats <<~EOS
+              KeyValue requires two system permissions for keyboard simulation:
+
+                1. Accessibility: System Settings → Privacy & Security → Accessibility
+                2. Input Monitoring: System Settings → Privacy & Security → Input Monitoring
+
+              The app will guide you through the setup on first launch.
+
+              Since this is an ad-hoc signed open-source app, if macOS blocks it:
+                xattr -cr /Applications/KeyValue.app
+            EOS
+          end
+          CASKEOF
+
+          # Remove leading whitespace (heredoc indentation)
+          sed -i 's/^          //' homebrew-tap/Casks/keyvalue.rb
+
+          echo "✅ Formula updated to v${VERSION}"
+          cat homebrew-tap/Casks/keyvalue.rb
+
+      - name: Commit and push
+        working-directory: homebrew-tap
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to Homebrew formula (already up to date)"
+          else
+            git commit -m "Update keyvalue to ${VERSION}
+
+          SHA256: ${SHA256}
+          Release: https://github.com/aresnasa/mac-keyvalue/releases/tag/v${VERSION}
+          Updated by: GitHub Actions"
+
+            git push origin main
+            echo "✅ Homebrew tap updated to v${VERSION}"
+          fi
