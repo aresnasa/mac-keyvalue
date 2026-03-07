@@ -97,7 +97,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     let centerX = s * 0.50
-    let centerY = s * 0.53   // slightly above true centre for label room
+    let centerY = s * 0.50   // true centre — lock sits exactly in the middle of the icon
 
     // ── Colour palette ──
     // Lock body: rich gold metallic (like emoji 🔒)
@@ -148,18 +148,28 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ]
     let kSize = ("K" as NSString).size(withAttributes: letterAttrs)
 
-    // ── Lock proportions — height tracks K's line height so it never overflows ──
-    // kSize.height is the full line-box (ascent + descent + leading).
-    // Multiplying by 0.75 gives a lock whose shackle top sits comfortably below K's cap.
-    let lockTotalH  = kSize.height * 0.75    // total lock (body + shackle)
+    // ── K draw-origin (declared here so lock geometry can reference it) ──
+    // NSString draws from bounding-box bottom; centering the box at centerY:
+    let kY = centerY - kSize.height * 0.50
+
+    // ── Lock proportions — lock spans K's full visual (glyph) height ──
+    // Georgia Bold line-box fractions (measured via CoreText):
+    //   descent fraction  ≈ 0.19  → K glyph bottom = kY + kSize.height * 0.19
+    //   cap-top fraction  ≈ 0.80  → K glyph top    = kY + kSize.height * 0.80
+    // shackleTopY = lockBodyBotY + lockTotalH * spanFactor
+    //   spanFactor = bodyRatio + straightRatio + outerArcRatio
+    //              = 0.55 + 0.18 + (0.55 * 1.10 * 0.38)  ≈ 0.960
+    // Solving for lockTotalH so shackleTopY == K glyph top:
+    let kGlyphBotFrac: CGFloat = 0.19
+    let kGlyphTopFrac: CGFloat = 0.80
+    let spanFactor:    CGFloat = 0.55 + 0.18 + 0.55 * 1.10 * 0.38   // ≈ 0.960
+    let lockTotalH  = kSize.height * (kGlyphTopFrac - kGlyphBotFrac) / spanFactor
     let lockBodyH   = lockTotalH * 0.55      // body = lower 55 % of lock
     let lockBodyW   = lockBodyH * 1.10       // body slightly wider than tall
     let lockBodyR   = lockBodyW * 0.14
 
-    // ── Strict bottom alignment: K, lock body, V all share the same baselineY ──
-    // Centre the composition (K is the tallest element at kSize.height).
-    let baselineY    = centerY - kSize.height * 0.45   // group centred, slight room below for label
-    let lockBodyBotY = baselineY
+    // Lock bottom aligned to K glyph bottom; everything else derived from this
+    let lockBodyBotY = kY + kSize.height * kGlyphBotFrac
     let lockBodyTopY = lockBodyBotY + lockBodyH
     let lockBodyCY   = (lockBodyBotY + lockBodyTopY) / 2
 
@@ -417,11 +427,11 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     // (fontSize / serifFont / letterAttrs / kSize already declared above)
     let kText = "K" as NSString
 
-    // Position K: right edge hugs lock body's left edge; bottom strictly aligned
+    // Position K: right edge hugs lock body's left edge
+    // kY declared above in lock geometry section
     let lockLeftEdge = centerX - lockBodyW / 2
-    let kGap = s * 0.012
+    let kGap = s * 0.038
     let kX   = lockLeftEdge - kGap - kSize.width
-    let kY   = baselineY    // ← strict bottom alignment
 
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: s * 0.003, height: -s * 0.003),
@@ -436,9 +446,9 @@ func drawIcon(size pixelSize: Int) -> NSImage {
 
     let vText = "V" as NSString
     let lockRightEdge = centerX + lockBodyW / 2
-    let vGap = s * 0.012
+    let vGap = s * 0.038
     let vX   = lockRightEdge + vGap
-    let vY   = baselineY    // ← strict bottom alignment (same as K and lock)
+    let vY   = kY    // same centre-line as K
 
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: -s * 0.003, height: -s * 0.003),
