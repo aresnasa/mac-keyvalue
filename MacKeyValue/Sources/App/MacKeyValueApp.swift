@@ -303,7 +303,7 @@ struct MenuBarView: View {
             if viewModel.isPrivacyMode {
                 Label("隐私模式已开启", systemImage: "lock.shield.fill")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
             }
         }
 
@@ -543,13 +543,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let lockX = (size - lockW) / 2
                 let lockY = (size - lockH) / 2
                 let lockRect = CGRect(x: lockX, y: lockY, width: lockW, height: lockH)
-                NSColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 1.0).set()
+                NSColor(red: 0.80, green: 0.65, blue: 0.20, alpha: 1.0).set()
                 lockImage.draw(in: lockRect)
             } else {
                 // Fallback: draw emoji with vertical offset to prevent shackle clipping
                 let lockAttrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: size * 0.20, weight: .regular),
-                    .foregroundColor: NSColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 1.0),
+                    .foregroundColor: NSColor(red: 0.80, green: 0.65, blue: 0.20, alpha: 1.0),
                 ]
                 let lockText = "🔒" as NSString
                 let lockSize = lockText.size(withAttributes: lockAttrs)

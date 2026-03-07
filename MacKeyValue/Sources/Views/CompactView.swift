@@ -156,7 +156,7 @@ struct CompactView: View {
             if viewModel.isPrivacyMode {
                 Label("隐私", systemImage: "lock.shield.fill")
                     .font(.caption2)
-                    .foregroundStyle(.red.opacity(0.7))
+                    .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
             }
 
             if !viewModel.isAccessibilityGranted {
@@ -211,7 +211,7 @@ struct CompactEntryRow: View {
                     if entry.isPrivate {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 8))
-                            .foregroundStyle(.red.opacity(0.6))
+                            .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
                     }
                 }
                 HStack(spacing: 6) {

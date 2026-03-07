@@ -100,25 +100,25 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let centerY = s * 0.53   // slightly above true centre for label room
 
     // ── Colour palette ──
-    // Lock body: deep navy-blue metallic (NOT black, NOT grey)
-    let lockDark    = CGColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
-    let lockMid     = CGColor(red: 0.22, green: 0.30, blue: 0.48, alpha: 1.0)
-    let lockLight   = CGColor(red: 0.32, green: 0.42, blue: 0.60, alpha: 1.0)
-    let lockBright  = CGColor(red: 0.42, green: 0.52, blue: 0.70, alpha: 1.0)
+    // Lock body: rich gold metallic (like emoji 🔒)
+    let lockDark    = CGColor(red: 0.55, green: 0.40, blue: 0.08, alpha: 1.0)
+    let lockMid     = CGColor(red: 0.72, green: 0.55, blue: 0.12, alpha: 1.0)
+    let lockLight   = CGColor(red: 0.88, green: 0.72, blue: 0.22, alpha: 1.0)
+    let lockBright  = CGColor(red: 1.00, green: 0.86, blue: 0.38, alpha: 1.0)
 
-    // Shackle: slightly lighter steel-blue
-    let shackleDark = CGColor(red: 0.28, green: 0.38, blue: 0.55, alpha: 1.0)
-    let shackleMid  = CGColor(red: 0.40, green: 0.50, blue: 0.66, alpha: 1.0)
-    let shackleHi   = CGColor(red: 0.55, green: 0.64, blue: 0.78, alpha: 1.0)
+    // Shackle: slightly darker gold / bronze
+    let shackleDark = CGColor(red: 0.50, green: 0.38, blue: 0.10, alpha: 1.0)
+    let shackleMid  = CGColor(red: 0.70, green: 0.55, blue: 0.18, alpha: 1.0)
+    let shackleHi   = CGColor(red: 0.92, green: 0.78, blue: 0.35, alpha: 1.0)
 
-    // Gold accent for keyhole
-    let goldDeep    = CGColor(red: 0.72, green: 0.58, blue: 0.18, alpha: 1.0)
-    let goldMain    = CGColor(red: 0.88, green: 0.74, blue: 0.28, alpha: 1.0)
-    let goldBright  = CGColor(red: 1.00, green: 0.90, blue: 0.45, alpha: 1.0)
+    // Gold accent for keyhole (darker contrast against gold body)
+    let goldDeep    = CGColor(red: 0.40, green: 0.28, blue: 0.05, alpha: 1.0)
+    let goldMain    = CGColor(red: 0.55, green: 0.40, blue: 0.08, alpha: 1.0)
+    let goldBright  = CGColor(red: 0.75, green: 0.58, blue: 0.15, alpha: 1.0)
     let goldGlow    = CGColor(red: 1.00, green: 0.88, blue: 0.40, alpha: 1.0)
 
-    // Letter colour
-    let letterColor = CGColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
+    // Letter colour — deep navy for contrast against gold lock
+    let letterColor = CGColor(red: 0.12, green: 0.16, blue: 0.30, alpha: 1.0)
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 3. PADLOCK — The centrepiece
@@ -158,7 +158,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ctx.saveGState()
     let haloGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                               colors: [
-                                  CGColor(red: 1.0, green: 0.88, blue: 0.40, alpha: 0.10),
+                                  CGColor(red: 1.0, green: 0.88, blue: 0.40, alpha: 0.18),
                                   CGColor(red: 1.0, green: 0.88, blue: 0.40, alpha: 0.0),
                               ] as CFArray, locations: [0.0, 1.0])!
     ctx.drawRadialGradient(haloGrad,
@@ -209,7 +209,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.006),
                   blur: s * 0.018,
-                  color: CGColor(red: 0.06, green: 0.10, blue: 0.22, alpha: 0.40))
+                  color: CGColor(red: 0.30, green: 0.20, blue: 0.05, alpha: 0.45))
 
     // Shackle gradient fill (metallic: left-dark → center-bright → right-dark)
     ctx.addPath(shackleFill)
@@ -231,7 +231,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
                         startAngle: .pi * 0.80,
                         endAngle: .pi * 0.20,
                         clockwise: false)
-    ctx.setStrokeColor(CGColor(red: 0.75, green: 0.82, blue: 0.92, alpha: 0.55))
+    ctx.setStrokeColor(CGColor(red: 1.00, green: 0.94, blue: 0.70, alpha: 0.60))
     ctx.setLineWidth(shackleBarW * 0.50)
     ctx.setLineCap(.butt)
     ctx.addPath(shackleHlArc)
@@ -241,7 +241,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     // Shackle subtle border
     ctx.saveGState()
     ctx.addPath(shackleFill)
-    ctx.setStrokeColor(CGColor(red: 0.10, green: 0.16, blue: 0.30, alpha: 0.25))
+    ctx.setStrokeColor(CGColor(red: 0.45, green: 0.32, blue: 0.06, alpha: 0.35))
     ctx.setLineWidth(s * 0.002)
     ctx.strokePath()
     ctx.restoreGState()
@@ -255,7 +255,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.008),
                   blur: s * 0.030,
-                  color: CGColor(red: 0.05, green: 0.08, blue: 0.18, alpha: 0.50))
+                  color: CGColor(red: 0.30, green: 0.20, blue: 0.05, alpha: 0.50))
 
     // Body gradient (top bright → bottom dark, 3D metallic feel)
     ctx.addPath(lbPath)
@@ -305,7 +305,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     // Body border for definition
     ctx.saveGState()
     ctx.addPath(lbPath)
-    ctx.setStrokeColor(CGColor(red: 0.10, green: 0.16, blue: 0.28, alpha: 0.30))
+    ctx.setStrokeColor(CGColor(red: 0.45, green: 0.32, blue: 0.06, alpha: 0.35))
     ctx.setLineWidth(s * 0.0025)
     ctx.strokePath()
     ctx.restoreGState()
@@ -315,7 +315,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ctx.saveGState()
     ctx.move(to: CGPoint(x: centerX - lockBodyW * 0.42, y: divY))
     ctx.addLine(to: CGPoint(x: centerX + lockBodyW * 0.42, y: divY))
-    ctx.setStrokeColor(CGColor(red: 0.08, green: 0.14, blue: 0.28, alpha: 0.20))
+    ctx.setStrokeColor(CGColor(red: 0.45, green: 0.32, blue: 0.06, alpha: 0.20))
     ctx.setLineWidth(s * 0.002)
     ctx.strokePath()
     ctx.restoreGState()
@@ -325,28 +325,28 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let khCY = lockBodyCY - lockBodyH * 0.06
     let khR  = lockBodyW * 0.10
 
-    // Outer golden glow (radial) — the "special effect"
+    // Outer dark shadow around keyhole
     ctx.saveGState()
     let khGlowGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                 colors: [
-                                    CGColor(red: 1.0, green: 0.88, blue: 0.35, alpha: 0.40),
-                                    CGColor(red: 1.0, green: 0.85, blue: 0.30, alpha: 0.15),
-                                    CGColor(red: 1.0, green: 0.80, blue: 0.25, alpha: 0.0),
+                                    CGColor(red: 0.20, green: 0.12, blue: 0.0, alpha: 0.50),
+                                    CGColor(red: 0.30, green: 0.20, blue: 0.0, alpha: 0.15),
+                                    CGColor(red: 0.40, green: 0.28, blue: 0.0, alpha: 0.0),
                                 ] as CFArray,
                                 locations: [0.0, 0.45, 1.0])!
     ctx.drawRadialGradient(khGlowGrad,
                            startCenter: CGPoint(x: centerX, y: khCY),
                            startRadius: khR * 0.5,
                            endCenter: CGPoint(x: centerX, y: khCY),
-                           endRadius: khR * 5.0,
+                           endRadius: khR * 3.5,
                            options: [])
     ctx.restoreGState()
 
-    // Keyhole circle — filled with golden gradient
+    // Keyhole circle — dark cutout with subtle depth
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.002),
-                  blur: s * 0.010,
-                  color: CGColor(red: 0.80, green: 0.65, blue: 0.10, alpha: 0.60))
+                  blur: s * 0.008,
+                  color: CGColor(red: 0.10, green: 0.06, blue: 0.0, alpha: 0.70))
     let khCircleRect = CGRect(x: centerX - khR, y: khCY - khR,
                               width: khR * 2, height: khR * 2)
     let khCirclePath = CGPath(ellipseIn: khCircleRect, transform: nil)
@@ -361,11 +361,11 @@ func drawIcon(size pixelSize: Int) -> NSImage {
                            options: [])
     ctx.restoreGState()
 
-    // Tiny bright highlight spot on keyhole
+    // Tiny bright highlight spot on keyhole rim
     ctx.saveGState()
-    let khSpotR = khR * 0.28
+    let khSpotR = khR * 0.22
     let khSpotCY = khCY + khR * 0.35
-    ctx.setFillColor(CGColor(red: 1.0, green: 0.98, blue: 0.82, alpha: 0.65))
+    ctx.setFillColor(CGColor(red: 0.90, green: 0.72, blue: 0.30, alpha: 0.50))
     ctx.fillEllipse(in: CGRect(x: centerX - khSpotR, y: khSpotCY - khSpotR,
                                width: khSpotR * 2, height: khSpotR * 2))
     ctx.restoreGState()
@@ -459,8 +459,8 @@ func drawIcon(size pixelSize: Int) -> NSImage {
         ctx.saveGState()
         let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                            colors: [
-                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.0),
-                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.28),
+                               CGColor(red: 0.70, green: 0.55, blue: 0.18, alpha: 0.0),
+                               CGColor(red: 0.70, green: 0.55, blue: 0.18, alpha: 0.28),
                            ] as CFArray, locations: [0.0, 1.0])!
         ctx.addPath(roundedRectPath(rect, radius: connH / 2))
         ctx.clip()
@@ -480,8 +480,8 @@ func drawIcon(size pixelSize: Int) -> NSImage {
         ctx.saveGState()
         let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                            colors: [
-                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.28),
-                               CGColor(red: 0.20, green: 0.28, blue: 0.44, alpha: 0.0),
+                               CGColor(red: 0.70, green: 0.55, blue: 0.18, alpha: 0.28),
+                               CGColor(red: 0.70, green: 0.55, blue: 0.18, alpha: 0.0),
                            ] as CFArray, locations: [0.0, 1.0])!
         ctx.addPath(roundedRectPath(rect, radius: connH / 2))
         ctx.clip()

@@ -245,7 +245,7 @@ struct SidebarView: View {
                     icon: "lock.shield.fill",
                     count: viewModel.entries.filter { $0.isPrivate }.count,
                     isSelected: viewModel.filterState.showPrivateOnly,
-                    tintColor: .red
+                    tintColor: Color(red: 0.80, green: 0.65, blue: 0.20)
                 ) {
                     viewModel.filterState.showPrivateOnly = true
                     viewModel.filterState.showFavoritesOnly = false
@@ -460,7 +460,7 @@ struct EntryRowView: View {
                 if entry.isPrivate {
                     Image(systemName: "lock.fill")
                         .font(.caption2)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
                 }
 
                 Spacer()
@@ -550,8 +550,8 @@ struct EntryDetailView: View {
                                         .font(.caption)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
-                                        .background(Capsule().fill(Color.red.opacity(0.15)))
-                                        .foregroundStyle(.red)
+                                        .background(Capsule().fill(Color(red: 0.80, green: 0.65, blue: 0.20).opacity(0.15)))
+                                        .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
                                 }
                             }
                             Text(entry.category.displayName)
@@ -918,7 +918,7 @@ struct LockScreenView: View {
         VStack(spacing: 20) {
             Image(systemName: "lock.fill")
                 .font(.system(size: 64))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
             Text("MacKeyValue")
                 .font(.largeTitle.bold())
             Text("正在验证...")
@@ -1621,13 +1621,14 @@ struct AboutSheet: View {
                     HStack(spacing: 2) {
                         Text("K")
                             .font(.system(size: 22, weight: .bold, design: .serif))
+                            .foregroundStyle(Color(red: 0.20, green: 0.24, blue: 0.35))
                         Image(systemName: "lock.fill")
                             .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
                         Text("V")
                             .font(.system(size: 22, weight: .bold, design: .serif))
+                            .foregroundStyle(Color(red: 0.20, green: 0.24, blue: 0.35))
                     }
-                    .foregroundStyle(Color(red: 0.20, green: 0.24, blue: 0.35))
                 }
 
                 Text("KeyValue")

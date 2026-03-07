@@ -44,19 +44,19 @@ func roundedRectPath(_ rect: CGRect, radius: CGFloat) -> CGPath {
 //    This matches the padlock design from generate_icon.swift exactly.
 func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
 
-    // ── Colour palette (matching app icon) ──
-    let lockDark    = CGColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
-    let lockMid     = CGColor(red: 0.22, green: 0.30, blue: 0.48, alpha: 1.0)
-    let lockLight   = CGColor(red: 0.32, green: 0.42, blue: 0.60, alpha: 1.0)
-    let lockBright  = CGColor(red: 0.42, green: 0.52, blue: 0.70, alpha: 1.0)
+    // ── Colour palette (matching app icon — gold lock) ──
+    let lockDark    = CGColor(red: 0.55, green: 0.40, blue: 0.08, alpha: 1.0)
+    let lockMid     = CGColor(red: 0.72, green: 0.55, blue: 0.12, alpha: 1.0)
+    let lockLight   = CGColor(red: 0.88, green: 0.72, blue: 0.22, alpha: 1.0)
+    let lockBright  = CGColor(red: 1.00, green: 0.86, blue: 0.38, alpha: 1.0)
 
-    let shackleDark = CGColor(red: 0.28, green: 0.38, blue: 0.55, alpha: 1.0)
-    let shackleMid  = CGColor(red: 0.40, green: 0.50, blue: 0.66, alpha: 1.0)
-    let shackleHi   = CGColor(red: 0.55, green: 0.64, blue: 0.78, alpha: 1.0)
+    let shackleDark = CGColor(red: 0.50, green: 0.38, blue: 0.10, alpha: 1.0)
+    let shackleMid  = CGColor(red: 0.70, green: 0.55, blue: 0.18, alpha: 1.0)
+    let shackleHi   = CGColor(red: 0.92, green: 0.78, blue: 0.35, alpha: 1.0)
 
-    let goldDeep    = CGColor(red: 0.72, green: 0.58, blue: 0.18, alpha: 1.0)
-    let goldMain    = CGColor(red: 0.88, green: 0.74, blue: 0.28, alpha: 1.0)
-    let goldBright  = CGColor(red: 1.00, green: 0.90, blue: 0.45, alpha: 1.0)
+    let goldDeep    = CGColor(red: 0.40, green: 0.28, blue: 0.05, alpha: 1.0)
+    let goldMain    = CGColor(red: 0.55, green: 0.40, blue: 0.08, alpha: 1.0)
+    let goldBright  = CGColor(red: 0.75, green: 0.58, blue: 0.15, alpha: 1.0)
 
     // ── Lock geometry ──
     let lockTotalH  = s * 0.36
