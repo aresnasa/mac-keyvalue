@@ -68,20 +68,43 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     let lockBodyTopY = lockBodyBotY + lockBodyH
     let lockBodyCY   = (lockBodyBotY + lockBodyTopY) / 2
 
-    // Shackle — taller with straight vertical bars + semicircular arc
-    let shackleBarW   = s * 0.024
-    let shackleInnerW = lockBodyW * 0.55
-    let shackleOuterW = shackleInnerW + shackleBarW * 2
-    let shackleOuterR = shackleOuterW / 2
-    let shackleInnerR = shackleInnerW / 2
-    let shackleStraightH = lockTotalH * 0.18
-    let shackleArcCY  = lockBodyTopY + shackleStraightH
+    // Shackle — U-shaped closed filled path matching the app icon design
+    let shackleBarW    = s * 0.024                 // bar thickness
+    let shackleInnerW  = lockBodyW * 0.55          // inner gap width
+    let shackleOuterW  = shackleInnerW + shackleBarW * 2
+    let shackleOuterR  = shackleOuterW / 2
+    let shackleInnerR  = shackleInnerW / 2
+    let shackleStraightH = lockTotalH * 0.18       // straight vertical section height
+    let shackleArcCY   = lockBodyTopY + shackleStraightH  // arc centre above body
+    let barBotY        = lockBodyTopY - lockBodyH * 0.08   // bars sink into lock body
 
+    // Build closed filled path: left bar → outer arc → right bar → inner arc (reversed)
+    let shackleFill = CGMutablePath()
     let barLOuterX = cx - shackleOuterW / 2
     let barLInnerX = cx - shackleInnerW / 2
     let barRInnerX = cx + shackleInnerW / 2
     let barROuterX = cx + shackleOuterW / 2
-    let barBotY    = lockBodyTopY - lockBodyH * 0.12
+
+    // Left outer edge, going up
+    shackleFill.move(to: CGPoint(x: barLOuterX, y: barBotY))
+    shackleFill.addLine(to: CGPoint(x: barLOuterX, y: shackleArcCY))
+    // Outer arc left → right
+    shackleFill.addArc(center: CGPoint(x: cx, y: shackleArcCY),
+                       radius: shackleOuterR,
+                       startAngle: .pi, endAngle: 0, clockwise: false)
+    // Right outer edge, going down
+    shackleFill.addLine(to: CGPoint(x: barROuterX, y: barBotY))
+    // Across bottom of right bar
+    shackleFill.addLine(to: CGPoint(x: barRInnerX, y: barBotY))
+    // Right inner edge, going up
+    shackleFill.addLine(to: CGPoint(x: barRInnerX, y: shackleArcCY))
+    // Inner arc right → left (reversed)
+    shackleFill.addArc(center: CGPoint(x: cx, y: shackleArcCY),
+                       radius: shackleInnerR,
+                       startAngle: 0, endAngle: .pi, clockwise: true)
+    // Left inner edge, going down
+    shackleFill.addLine(to: CGPoint(x: barLInnerX, y: barBotY))
+    shackleFill.closeSubpath()
 
     // ── Golden halo behind lock ──
     ctx.saveGState()
@@ -98,23 +121,7 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
                            options: [])
     ctx.restoreGState()
 
-    // ── Shackle (filled closed path) ──
-    let shackleFill = CGMutablePath()
-    shackleFill.move(to: CGPoint(x: barLOuterX, y: barBotY))
-    shackleFill.addLine(to: CGPoint(x: barLOuterX, y: shackleArcCY))
-    shackleFill.addArc(center: CGPoint(x: cx, y: shackleArcCY),
-                       radius: shackleOuterR,
-                       startAngle: .pi, endAngle: 0, clockwise: false)
-    shackleFill.addLine(to: CGPoint(x: barROuterX, y: barBotY))
-    shackleFill.addLine(to: CGPoint(x: barRInnerX, y: barBotY))
-    shackleFill.addLine(to: CGPoint(x: barRInnerX, y: shackleArcCY))
-    shackleFill.addArc(center: CGPoint(x: cx, y: shackleArcCY),
-                       radius: shackleInnerR,
-                       startAngle: 0, endAngle: .pi, clockwise: true)
-    shackleFill.addLine(to: CGPoint(x: barLInnerX, y: barBotY))
-    shackleFill.closeSubpath()
-
-    // Shackle shadow + gradient fill
+    // ── Shackle shadow + gradient fill ──
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.006),
                   blur: s * 0.020,
@@ -130,16 +137,16 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
                            options: [])
     ctx.restoreGState()
 
-    // Shackle chrome highlight arc
+    // Shackle highlight — subtle top gleam
     ctx.saveGState()
     let shackleHlArc = CGMutablePath()
     shackleHlArc.addArc(center: CGPoint(x: cx, y: shackleArcCY),
                         radius: (shackleOuterR + shackleInnerR) / 2,
-                        startAngle: .pi * 0.80, endAngle: .pi * 0.20,
+                        startAngle: .pi * 0.82, endAngle: .pi * 0.18,
                         clockwise: false)
-    ctx.setStrokeColor(CGColor(red: 1.00, green: 0.92, blue: 0.60, alpha: 0.55))
+    ctx.setStrokeColor(CGColor(red: 1.00, green: 0.92, blue: 0.60, alpha: 0.35))
     ctx.setLineWidth(shackleBarW * 0.50)
-    ctx.setLineCap(.butt)
+    ctx.setLineCap(.round)
     ctx.addPath(shackleHlArc)
     ctx.strokePath()
     ctx.restoreGState()
@@ -147,7 +154,7 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     // Shackle border
     ctx.saveGState()
     ctx.addPath(shackleFill)
-    ctx.setStrokeColor(CGColor(red: 0.35, green: 0.25, blue: 0.05, alpha: 0.35))
+    ctx.setStrokeColor(CGColor(red: 0.35, green: 0.25, blue: 0.05, alpha: 0.30))
     ctx.setLineWidth(s * 0.002)
     ctx.strokePath()
     ctx.restoreGState()
