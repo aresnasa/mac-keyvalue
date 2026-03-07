@@ -90,13 +90,32 @@ cd mac-keyvalue/MacKeyValue
 - 自动 **⌘V 粘贴**到目标窗口
 - 自定义快捷键绑定
 
-| 快捷键 | 功能 |
-|--------|------|
-| `⌘⇧K
-` | 显示/隐藏主窗口 |
-| `⌘⌥Space` | 快速搜索 |
-| `⌘⇧V` | 剪贴板历史 |
-| `⌘⇧⌥P` | 切换隐私模式 |
+<table>
+<tr>
+<th width="260" align="center">快捷键</th>
+<th align="left">功能</th>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⇧&nbsp;</kbd>&ensp;<kbd>&nbsp;K&nbsp;</kbd></td>
+<td>&emsp;🪟&ensp; 显示/隐藏主窗口</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⌥&nbsp;</kbd>&ensp;<kbd>&nbsp;Space&nbsp;</kbd></td>
+<td>&emsp;🔍&ensp; 快速搜索</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⇧&nbsp;</kbd>&ensp;<kbd>&nbsp;V&nbsp;</kbd></td>
+<td>&emsp;📋&ensp; 剪贴板历史</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⇧&nbsp;</kbd>&ensp;<kbd>&nbsp;⌥&nbsp;</kbd>&ensp;<kbd>&nbsp;P&nbsp;</kbd></td>
+<td>&emsp;🔒&ensp; 切换隐私模式</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;1&nbsp;</kbd></td>
+<td>&emsp;🔄&ensp; 切换精简/管理模式</td>
+</tr>
+</table>
 
 ### 📋 智能剪贴板
 

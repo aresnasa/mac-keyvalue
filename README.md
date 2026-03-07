@@ -102,13 +102,32 @@ Enable both toggles for KeyValue, then restart the app as prompted.
 
 ### Default Keyboard Shortcuts
 
-| Shortcut | Action |
-|---|---|
-| `⌘⇧K` | Show / Hide main window |
-| `⌘⌥Space` | Quick search |
-| `⌘⇧V` | Clipboard history |
-| `⌘⇧⌥P` | Toggle privacy mode |
-| `⌘1` | Switch between Compact / Full mode |
+<table>
+<tr>
+<th width="260" align="center">Shortcut</th>
+<th align="left">Action</th>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⇧&nbsp;</kbd>&ensp;<kbd>&nbsp;K&nbsp;</kbd></td>
+<td>&emsp;🪟&ensp; Show / Hide main window</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⌥&nbsp;</kbd>&ensp;<kbd>&nbsp;Space&nbsp;</kbd></td>
+<td>&emsp;🔍&ensp; Quick search</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⇧&nbsp;</kbd>&ensp;<kbd>&nbsp;V&nbsp;</kbd></td>
+<td>&emsp;📋&ensp; Clipboard history</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;⇧&nbsp;</kbd>&ensp;<kbd>&nbsp;⌥&nbsp;</kbd>&ensp;<kbd>&nbsp;P&nbsp;</kbd></td>
+<td>&emsp;🔒&ensp; Toggle privacy mode</td>
+</tr>
+<tr>
+<td align="center"><kbd>&nbsp;⌘&nbsp;</kbd>&ensp;<kbd>&nbsp;1&nbsp;</kbd></td>
+<td>&emsp;🔄&ensp; Switch between Compact / Full mode</td>
+</tr>
+</table>
 
 ### Two UI Modes
 
