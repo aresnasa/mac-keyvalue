@@ -143,6 +143,18 @@ struct MainView: View {
                 viewModel.activeSheet = .about
             }
 
+            // Show "有新版本" when update is available
+            if UpdateService.shared.state.isAvailable {
+                Button {
+                    viewModel.activeSheet = .about
+                } label: {
+                    Label(
+                        "有新版本 \(UpdateService.shared.state.availableVersion ?? "")  ↑",
+                        systemImage: "arrow.up.circle.fill"
+                    )
+                }
+            }
+
             Divider()
 
             Button {
@@ -151,7 +163,16 @@ struct MainView: View {
                 Label("切换到精简模式", systemImage: "rectangle.compress.vertical")
             }
         } label: {
-            Label("更多", systemImage: "ellipsis.circle")
+            // Badge the ellipsis icon when an update is waiting
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "ellipsis.circle")
+                if UpdateService.shared.state.isAvailable {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 4, y: -4)
+                }
+            }
         }
     }
 
@@ -185,6 +206,8 @@ struct MainView: View {
             QuickSearchSheet()
                 .environmentObject(viewModel)
         case .about:
+            AboutSheet()
+        case .checkUpdate:
             AboutSheet()
         }
     }
@@ -1207,6 +1230,7 @@ struct ClipboardHistorySheet: View {
 struct SettingsSheet: View {
     @EnvironmentObject var viewModel: AppViewModel
     @Environment(\.dismiss) var dismiss
+    @State private var launchAtLogin = LaunchAtLoginHelper.isEnabled
 
     var body: some View {
         VStack(spacing: 16) {
@@ -1215,6 +1239,10 @@ struct SettingsSheet: View {
 
             Form {
                 Section("通用") {
+                    Toggle("开机自动启动", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { newValue in
+                            LaunchAtLoginHelper.setEnabled(newValue)
+                        }
                     Toggle("启动时开始监控剪贴板", isOn: .constant(true))
                     Toggle("隐私模式", isOn: $viewModel.isPrivacyMode)
                 }
@@ -1254,7 +1282,7 @@ struct SettingsSheet: View {
             .padding(.horizontal)
         }
         .padding()
-        .frame(minWidth: 450, minHeight: 400)
+        .frame(minWidth: 450, minHeight: 420)
     }
 }
 
@@ -1386,7 +1414,13 @@ struct HotkeySettingsSheet: View {
             } else {
                 List {
                     ForEach(viewModel.hotkeyService.bindings) { binding in
-                        HStack {
+                        HStack(spacing: 10) {
+                            // Action icon
+                            Image(systemName: binding.actionType.icon)
+                                .font(.system(size: 15))
+                                .foregroundStyle(iconColor(for: binding.actionType))
+                                .frame(width: 22)
+
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(binding.name)
                                     .font(.headline)
@@ -1437,6 +1471,22 @@ struct HotkeySettingsSheet: View {
         }
         .padding()
         .frame(minWidth: 500, minHeight: 400)
+    }
+
+    // MARK: - Helpers
+
+    private func iconColor(for type: HotkeyBinding.ActionType) -> Color {
+        switch type {
+        case .copyPassword:         return .blue
+        case .typePassword:         return .purple
+        case .showPopover:          return .accentColor
+        case .togglePrivacyMode:    return .orange
+        case .showClipboardHistory: return .teal
+        case .quickSearch:          return .indigo
+        case .captureScreenshot:    return .green
+        case .ocrScreenshot:        return .mint
+        case .custom:               return .secondary
+        }
     }
 
     // MARK: - Accessibility Permission Banner
@@ -1600,6 +1650,7 @@ struct QuickSearchSheet: View {
 
 struct AboutSheet: View {
     @Environment(\.dismiss) var dismiss
+    @ObservedObject private var updater = UpdateService.shared
     @State private var showDonate = false
 
     private var appVersion: String {
@@ -1680,7 +1731,7 @@ struct AboutSheet: View {
         }
         .padding(.horizontal, 32)
         .padding(.vertical, 20)
-        .frame(width: 440, height: showDonate ? 560 : 440)
+        .frame(width: 460, height: showDonate ? 600 : 540)
         .animation(.easeInOut(duration: 0.3), value: showDonate)
     }
 
@@ -1699,8 +1750,155 @@ struct AboutSheet: View {
 
     // MARK: - Links View
 
+
+    // MARK: - Update Section
+
+    @ViewBuilder
+    private var updateSection: some View {
+        VStack(spacing: 8) {
+            // ── Install method + current version row ──
+            HStack(spacing: 6) {
+                Image(systemName: updater.installMethod.icon)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(updater.installMethod.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("当前 v\(appVersion)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let last = updater.lastChecked {
+                    Text("· 上次检查 \(last, style: .relative)前")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            // ── Status row ──
+            switch updater.state {
+            case .idle, .upToDate:
+                HStack {
+                    if updater.state == .upToDate {
+                        Label("已是最新版本", systemImage: "checkmark.seal.fill")
+                            .font(.callout)
+                            .foregroundStyle(.green)
+                    }
+                    Spacer()
+                    Button {
+                        Task { await updater.checkForUpdates(force: true) }
+                    } label: {
+                        Label("检查更新", systemImage: "arrow.clockwise")
+                            .font(.callout)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+            case .checking:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在检查更新…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+            case .available(let version, _):
+                VStack(spacing: 6) {
+                    HStack {
+                        Label("发现新版本 v\(version)", systemImage: "arrow.up.circle.fill")
+                            .font(.callout.bold())
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Button {
+                            Task { await updater.checkForUpdates(force: true) }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    }
+                    Button {
+                        Task { await updater.performUpdate() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: updater.installMethod.canAutoUpdate
+                                  ? "arrow.down.circle.fill" : "safari")
+                            Text({
+                                if case .homebrew = updater.installMethod { return "通过 Homebrew 更新" }
+                                if case .sourceTree = updater.installMethod { return "通过 Git 更新" }
+                                return "前往下载页"
+                            }())
+                                .bold()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .controlSize(.regular)
+                }
+
+            case .updating:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text({
+                    if case .homebrew = updater.installMethod { return "正在运行 brew upgrade…" }
+                    return "正在运行 git pull…"
+                }())
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+            case .success(let version):
+                HStack(spacing: 8) {
+                    Label(version == "latest"
+                          ? "代码已更新，请重新构建"
+                          : "更新成功！正在重启…",
+                          systemImage: "checkmark.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.green)
+                    Spacer()
+                }
+
+            case .failed(let msg):
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("更新失败", systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout.bold())
+                        .foregroundStyle(.red)
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        Task { await updater.checkForUpdates(force: true) }
+                    } label: {
+                        Label("重试", systemImage: "arrow.clockwise")
+                            .font(.callout)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.secondary.opacity(0.07))
+        )
+    }
+
     private var linksView: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
+            // ── Update Section ──
+            updateSection
+
+            Divider()
+
+            // ── External Links ──
             HStack(spacing: 16) {
                 linkButton("GitHub", icon: "chevron.left.forwardslash.chevron.right",
                            url: "https://github.com/aresnasa/mac-keyvalue")

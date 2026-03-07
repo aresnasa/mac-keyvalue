@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="MacKeyValue/Resources/AppIcon.appiconset/icon_128x128@2x.png" width="128" height="128" alt="KeyValue Icon">
+  <img src="MacKeyValue/Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png" width="128" height="128" alt="KeyValue Icon">
 </p>
 
 <h1 align="center">KeyValue</h1>

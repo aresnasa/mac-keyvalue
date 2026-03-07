@@ -1,4 +1,32 @@
+import ServiceManagement
 import SwiftUI
+
+// MARK: - Launch At Login
+
+/// Thin wrapper around `SMAppService.mainApp` (macOS 13+).
+/// Falls back gracefully (no-op) on older systems — which can't run this app
+/// anyway since the minimum deployment target is macOS 13.
+enum LaunchAtLoginHelper {
+
+    static var isEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    @discardableResult
+    static func setEnabled(_ enabled: Bool) -> Bool {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            return true
+        } catch {
+            print("[LaunchAtLogin] \(enabled ? "register" : "unregister") failed: \(error)")
+            return false
+        }
+    }
+}
 
 // MARK: - Notification Names
 
@@ -412,6 +440,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         print("[AppDelegate] MacKeyValue launched successfully")
+
+        // ── Auto-update check ──
+        // Run once per day in the background; never blocks launch.
+        Task {
+            await UpdateService.shared.checkForUpdates()
+        }
     }
 
     /// Sets the application icon for the Dock, window title bar, etc.

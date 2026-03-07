@@ -107,24 +107,47 @@ struct HotkeyBinding: Identifiable, Codable {
     var actionType: ActionType
 
     enum ActionType: String, Codable, CaseIterable {
-        case copyPassword = "copy_password"
-        case typePassword = "type_password"
-        case showPopover = "show_popover"
-        case togglePrivacyMode = "toggle_privacy_mode"
+        case copyPassword         = "copy_password"
+        case typePassword         = "type_password"
+        case showPopover          = "show_popover"
+        case togglePrivacyMode    = "toggle_privacy_mode"
         case showClipboardHistory = "show_clipboard_history"
-        case quickSearch = "quick_search"
-        case custom = "custom"
+        case quickSearch          = "quick_search"
+        case captureScreenshot    = "capture_screenshot"
+        case ocrScreenshot        = "ocr_screenshot"
+        case custom               = "custom"
 
         var displayName: String {
             switch self {
-            case .copyPassword: return "复制密码"
-            case .typePassword: return "键入密码"
-            case .showPopover: return "显示弹窗"
-            case .togglePrivacyMode: return "切换隐私模式"
+            case .copyPassword:         return "复制密码"
+            case .typePassword:         return "键入密码"
+            case .showPopover:          return "显示弹窗"
+            case .togglePrivacyMode:    return "切换隐私模式"
             case .showClipboardHistory: return "显示剪贴板历史"
-            case .quickSearch: return "快速搜索"
-            case .custom: return "自定义"
+            case .quickSearch:          return "快速搜索"
+            case .captureScreenshot:    return "截图到剪贴板"
+            case .ocrScreenshot:        return "截图 OCR 文字识别"
+            case .custom:               return "自定义"
             }
+        }
+
+        var icon: String {
+            switch self {
+            case .copyPassword:         return "doc.on.doc"
+            case .typePassword:         return "keyboard"
+            case .showPopover:          return "rectangle.on.rectangle"
+            case .togglePrivacyMode:    return "eye.slash"
+            case .showClipboardHistory: return "doc.on.clipboard"
+            case .quickSearch:          return "magnifyingglass"
+            case .captureScreenshot:    return "camera.viewfinder"
+            case .ocrScreenshot:        return "doc.text.viewfinder"
+            case .custom:               return "wand.and.stars"
+            }
+        }
+
+        /// Whether this action type requires an associated entry (entryId).
+        var requiresEntry: Bool {
+            self == .copyPassword || self == .typePassword
         }
     }
 
@@ -370,6 +393,24 @@ final class HotkeyService: ObservableObject {
                 ),
                 actionType: .togglePrivacyMode
             ),
+            HotkeyBinding(
+                name: "截图到剪贴板",
+                keyCombo: KeyCombo(
+                    keyCode: UInt32(kVK_ANSI_4),
+                    modifiers: UInt32(cmdKey) | UInt32(shiftKey),
+                    keyName: "4"
+                ),
+                actionType: .captureScreenshot
+            ),
+            HotkeyBinding(
+                name: "截图 OCR",
+                keyCombo: KeyCombo(
+                    keyCode: UInt32(kVK_ANSI_5),
+                    modifiers: UInt32(cmdKey) | UInt32(shiftKey),
+                    keyName: "5"
+                ),
+                actionType: .ocrScreenshot
+            ),
         ]
 
         for binding in defaults {
@@ -531,8 +572,12 @@ final class HotkeyService: ObservableObject {
             handleTypePassword(binding)
         case .togglePrivacyMode:
             ClipboardService.shared.togglePrivacyMode()
+        case .captureScreenshot:
+            Task { await ScreenCaptureService.shared.captureToClipboard() }
+        case .ocrScreenshot:
+            Task { await ScreenCaptureService.shared.captureAndOCR() }
         case .showPopover, .showClipboardHistory, .quickSearch, .custom:
-            // These are handled by the onHotkeyTriggered callback
+            // These are handled by the onHotkeyTriggered callback in AppViewModel
             break
         }
     }

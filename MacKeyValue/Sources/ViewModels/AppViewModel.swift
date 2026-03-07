@@ -50,6 +50,7 @@ enum ActiveSheet: Identifiable, Equatable {
     case hotkeySettings
     case quickSearch
     case about
+    case checkUpdate
 
     var id: String {
         switch self {
@@ -62,6 +63,7 @@ enum ActiveSheet: Identifiable, Equatable {
         case .hotkeySettings: return "hotkeySettings"
         case .quickSearch: return "quickSearch"
         case .about: return "about"
+        case .checkUpdate: return "checkUpdate"
         }
     }
 }
@@ -362,6 +364,17 @@ final class AppViewModel: ObservableObject {
         hotkeyService.onHotkeyTriggered = { [weak self] binding in
             Task { @MainActor [weak self] in
                 self?.handleHotkeyTriggered(binding)
+            }
+        }
+
+        // 4. Screen-capture / OCR completion → show status bar message.
+        NotificationCenter.default.addObserver(
+            forName: .screenCaptureCompleted,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let msg = notification.object as? String {
+                self?.showStatusMessage(msg, duration: 4)
             }
         }
     }
@@ -1034,6 +1047,10 @@ final class AppViewModel: ObservableObject {
                     typeEntryValue(id: entryId)
                 }
             }
+        case .captureScreenshot:
+            Task { await ScreenCaptureService.shared.captureToClipboard() }
+        case .ocrScreenshot:
+            Task { await ScreenCaptureService.shared.captureAndOCR() }
         case .custom:
             break
         }
