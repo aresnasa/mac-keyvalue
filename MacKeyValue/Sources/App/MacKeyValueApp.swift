@@ -426,28 +426,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 3. `.icns` / `.png` in the source tree (relative to executable or CWD)
     /// 4. Programmatic fallback with "MK" text
     private func setApplicationIcon() {
-        // ── 1. Check if the system already loaded the icon from the bundle ──
-        // In a properly signed .app, the system reads CFBundleIconFile from
-        // Info.plist and sets the Dock icon before applicationDidFinishLaunching
-        // is called.  Detect this by checking if the bundle has the .icns file.
+        // ── 1. .app bundle — let macOS manage the icon automatically ──
+        //
+        // For a proper .app bundle macOS reads CFBundleIconFile from Info.plist
+        // and sets both the Dock icon AND the window-title-bar icon BEFORE
+        // applicationDidFinishLaunching is called.  The Dock then applies its
+        // own squircle + shadow mask on top.
+        //
+        // ⚠️  Do NOT call `NSApp.applicationIconImage = image` here for bundles:
+        //   • NSImage(contentsOfFile:) loads the raw .icns as a flat square image.
+        //   • Setting it overrides the system-managed version that already has
+        //     the squircle mask correctly applied by the Dock.
+        //   • Result: the Dock shows a perfectly square (no rounded corners) icon.
+        //
+        // Returning early lets macOS own the icon lifecycle for bundled apps.
         let bundlePath = Bundle.main.bundlePath
         if bundlePath.hasSuffix(".app") {
-            // We're in a .app bundle. Try to load the icon explicitly to set it
-            // on NSApplication (needed for the window title bar and other places).
-            let icnsInBundle = (bundlePath as NSString)
-                .appendingPathComponent("Contents/Resources/AppIcon.icns")
-            if FileManager.default.fileExists(atPath: icnsInBundle),
-               let image = NSImage(contentsOfFile: icnsInBundle) {
-                NSApplication.shared.applicationIconImage = image
-                print("[AppDelegate] Icon loaded from .app bundle: \(icnsInBundle)")
-                return
-            }
-            // Also try via Bundle API (works with asset catalogs)
-            if let bundleIcon = Bundle.main.image(forResource: "AppIcon") {
-                NSApplication.shared.applicationIconImage = bundleIcon
-                print("[AppDelegate] Icon loaded from bundle resources (asset catalog)")
-                return
-            }
+            print("[AppDelegate] .app bundle detected — icon managed by system (CFBundleIconFile)")
+            return
         }
 
         // ── 2. Bare executable — search for icon files in the source tree ──

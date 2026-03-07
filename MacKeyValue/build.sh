@@ -45,6 +45,7 @@ CONTENTS_DIR="${APP_BUNDLE}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 ENTITLEMENTS="./Resources/MacKeyValue.entitlements"
+ENTITLEMENTS_ADHOC="./Resources/MacKeyValue-adhoc.entitlements"
 INFO_PLIST="./Resources/Info.plist"
 ICON_FILE="./Resources/AppIcon.icns"
 ASSETS_DIR="./Resources/Assets.xcassets"
@@ -325,29 +326,62 @@ success "App bundle assembled"
 
 step "Code signing"
 
-if [ ! -f "$ENTITLEMENTS" ]; then
-    fail "Entitlements file not found: $ENTITLEMENTS"
+
+
+# On macOS 14+ (Sonoma) and especially macOS 26 (Tahoe), AMFI fatally rejects
+# ad-hoc signed binaries that declare "restricted entitlements" such as
+# keychain-access-groups, com.apple.security.automation.apple-events, and
+# com.apple.security.cs.disable-library-validation.  These entitlements require
+# a valid Apple Developer ID + Team ID to be trusted by the kernel.
+# Log evidence: "AMFI: bailing out because of restricted entitlements."
+#
+# Additionally, --options runtime (Hardened Runtime) combined with ad-hoc
+# signing is rejected by macOS 26 AMFI (AppleMobileFileIntegrityError -420).
+#
+# Fix: for ad-hoc builds use MacKeyValue-adhoc.entitlements (no restricted
+# keys, no --options runtime).  Developer ID builds keep the full entitlements
+# and Hardened Runtime as required for notarisation.
+if [ "$SIGN_ID" = "-" ]; then
+    ACTIVE_ENTITLEMENTS="$ENTITLEMENTS_ADHOC"
+else
+    ACTIVE_ENTITLEMENTS="$ENTITLEMENTS"
 fi
+
+if [ ! -f "$ACTIVE_ENTITLEMENTS" ]; then
+    fail "Entitlements file not found: $ACTIVE_ENTITLEMENTS"
+fi
+info "Using entitlements: $ACTIVE_ENTITLEMENTS"
 
 # Sign nested bundles first
 NESTED_COUNT=0
 while IFS= read -r -d '' nested; do
-    codesign --force --sign "$SIGN_ID" \
-        --timestamp=none \
-        --options runtime \
-        "$nested" 2>/dev/null && NESTED_COUNT=$((NESTED_COUNT + 1)) || true
+    if [ "$SIGN_ID" = "-" ]; then
+        codesign --force --sign "$SIGN_ID" \
+            --timestamp=none \
+            "$nested" 2>/dev/null && NESTED_COUNT=$((NESTED_COUNT + 1)) || true
+    else
+        codesign --force --sign "$SIGN_ID" \
+            --timestamp=none \
+            --options runtime \
+            "$nested" 2>/dev/null && NESTED_COUNT=$((NESTED_COUNT + 1)) || true
+    fi
 done < <(find "$APP_BUNDLE" \( -name "*.framework" -o -name "*.dylib" -o -name "*.bundle" \) -print0 2>/dev/null)
 
 [ $NESTED_COUNT -gt 0 ] && info "Signed $NESTED_COUNT nested component(s)"
 
 # Sign the app itself
-SIGN_FLAGS=(--force --sign "$SIGN_ID" --entitlements "$ENTITLEMENTS" --options runtime)
 if [ "$SIGN_ID" = "-" ]; then
-    # Ad-hoc: no timestamp
-    SIGN_FLAGS+=(--timestamp=none)
+    # Ad-hoc: no Hardened Runtime, no timestamp, minimal entitlements.
+    # macOS 26 AMFI rejects: adhoc + restricted entitlements + --options runtime.
+    SIGN_FLAGS=(--force --sign "$SIGN_ID"
+                --entitlements "$ACTIVE_ENTITLEMENTS"
+                --timestamp=none)
 else
-    # Developer ID: include secure timestamp
-    SIGN_FLAGS+=(--timestamp)
+    # Developer ID: full Hardened Runtime + secure timestamp for notarisation.
+    SIGN_FLAGS=(--force --sign "$SIGN_ID"
+                --entitlements "$ACTIVE_ENTITLEMENTS"
+                --options runtime
+                --timestamp)
 fi
 
 codesign "${SIGN_FLAGS[@]}" "$APP_BUNDLE"
@@ -462,17 +496,25 @@ if $DO_DMG; then
 
 🔓 首次打开（解除 macOS 门禁）：
    由于本应用是开源免费软件，没有 Apple 付费签名，
-   macOS 会阻止首次打开。解除方法：
+   macOS Gatekeeper 会阻止首次打开。解除方法：
 
-   方法一（推荐）：
+   方法一（终端直接运行，所有 macOS 版本通用，最可靠）：
+     /Applications/${APP_NAME}.app/Contents/MacOS/MacKeyValue &
+     说明：直接执行二进制文件完全绕过 Launch Services / Gatekeeper，
+           无需任何权限，立即生效。
+
+   方法二（系统设置，适用于 macOS Ventura 13 ~ Sequoia 15）：
+     双击打开后弹窗选「完成」，然后：
+     系统设置 → 隐私与安全性 → 下方会显示「已阻止使用 KeyValue」
+     → 点击「仍要打开」→ 再次点击「打开」
+
+   方法三（右键打开，适用于 macOS Ventura 及更早版本）：
      右键点击 ${APP_NAME}.app → 选择「打开」→ 弹窗中点击「打开」
 
-   方法二（命令行）：
-     xattr -cr /Applications/${APP_NAME}.app
-
-   方法三（系统设置）：
-     系统设置 → 隐私与安全性 → 下方会显示"KeyValue 已被阻止"
-     → 点击「仍要打开」
+   ⚠️  注意：macOS 14 (Sonoma) 起，`open` 命令和双击均受 Gatekeeper
+      严格拦截，ad-hoc 签名 App 会报「Launchd job spawn failed」。
+      `sudo spctl --add` 在 macOS 26 (Tahoe) 已被彻底移除。
+      请优先使用方法一（终端直接运行）。
 
 🔐 权限授予（首次启动后）：
    应用启动后会引导你授予两个权限：
@@ -549,18 +591,18 @@ if [ -n "$DMG_PATH" ] && [ -f "$DMG_PATH" ]; then
 fi
 
 echo ""
-echo -e "  ${DIM}Run:${RESET}      open ${APP_BUNDLE}"
+echo -e "  ${DIM}Run:${RESET}      ${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME} &"
 echo -e "  ${DIM}Or:${RESET}       $0 --run"
 
 if ! $DO_CI; then
     echo ""
     echo -e "${YELLOW}${BOLD}  📌 首次启动指南${RESET}"
     echo ""
-    echo -e "  ${DIM}1.${RESET} 启动应用"
-    echo -e "     ${DIM}open ${APP_BUNDLE}${RESET}"
+    echo -e "  ${DIM}1.${RESET} 启动应用（直接执行二进制，绕过 Gatekeeper）"
+    echo -e "     ${DIM}${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME} &${RESET}"
     echo ""
-    echo -e "  ${DIM}2.${RESET} 如遇「无法打开」弹窗，右键 → 打开，或执行："
-    echo -e "     ${DIM}xattr -cr ${APP_BUNDLE}${RESET}"
+    echo -e "  ${DIM}2.${RESET} 或使用系统设置放行（适用于已安装到 /Applications 的情况）："
+    echo -e "     ${DIM}系统设置 → 隐私与安全性 → 找到「KeyValue 已被阻止」→ 仍要打开${RESET}"
     echo ""
     echo -e "  ${DIM}3.${RESET} 应用内会引导授权两个系统权限："
     echo -e "     • 辅助功能 (Accessibility) — 模拟键盘输入"
@@ -588,7 +630,11 @@ echo ""
 
 if $DO_RUN && ! $DO_CI; then
     echo -e "🚀 Launching ${APP_NAME}..."
-    # Clear quarantine attribute so macOS doesn't block locally-built app
+    # On macOS 14+ (Sonoma) and later, `open` goes through Launch Services
+    # which enforces Gatekeeper and rejects ad-hoc signed apps with:
+    #   "Launchd job spawn failed" (RBSRequestErrorDomain Code=5)
+    # Running the binary directly bypasses Launch Services / Gatekeeper entirely.
     xattr -cr "$APP_BUNDLE" 2>/dev/null || true
-    open "$APP_BUNDLE"
+    "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME" &
+    disown
 fi

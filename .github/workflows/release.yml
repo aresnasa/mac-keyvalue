@@ -128,12 +128,24 @@ jobs:
 
             1. 下载下方的 `.dmg` 文件（根据你的 Mac 芯片选择）
             2. 打开 DMG，将 **KeyValue.app** 拖入 **Applications** 文件夹
-            3. 首次打开：右键点击 KeyValue.app → 选择「打开」
+            3. 首次解除 Gatekeeper 限制（选其一）：
 
-            > ⚠️ 本应用是免费开源软件，采用 ad-hoc 签名。
-            > macOS 会在首次打开时提示"无法验证开发者"，
-            > 右键 → 打开即可解除限制。
-            > 也可执行：`xattr -cr /Applications/KeyValue.app`
+            **方法 A — 终端直接运行（所有版本通用，最可靠）：**
+            > 打开终端，执行：
+            > `/Applications/KeyValue.app/Contents/MacOS/MacKeyValue &`
+            > 直接执行二进制完全绕过 Launch Services / Gatekeeper，无需管理员权限。
+
+            **方法 B — 系统设置（适用于 macOS Ventura 13 ~ Sequoia 15）：**
+            > 双击打开，弹窗点「完成」，然后：
+            > 系统设置 → 隐私与安全性 → 找到「已阻止使用 KeyValue」→ 点击「仍要打开」
+
+            **方法 C — 右键打开（适用于 macOS Ventura 及更早版本）：**
+            > 右键点击 KeyValue.app → 选择「打开」→ 弹窗点「打开」
+
+            > ⚠️ 本应用采用 ad-hoc 签名（无 Apple Developer ID）。
+            > macOS 14+ 通过 `open` 或双击启动时 Gatekeeper 严格拦截（报 Launchd job spawn failed）；
+            > `sudo spctl --add` 已在 macOS 26 (Tahoe) 中被彻底移除。
+            > **推荐使用方法 A（终端直接运行）。**
 
             #### 方式二：Homebrew
 
@@ -198,10 +210,16 @@ jobs:
             app "KeyValue.app"
 
             postflight do
-              # Remove quarantine attribute for ad-hoc signed app
+              # Step 1: Remove quarantine & provenance xattrs
               system_command "/usr/bin/xattr",
                              args: ["-cr", "#{appdir}/KeyValue.app"],
                              sudo: false
+              # Step 2: On macOS 13-15, attempt to add to Gatekeeper allowlist.
+              # Note: spctl --add was removed in macOS 26 (Tahoe); this call is
+              # best-effort and silently ignored on unsupported versions.
+              system_command "/bin/sh",
+                             args: ["-c", "spctl --add '#{appdir}/KeyValue.app' 2>/dev/null || true"],
+                             sudo: true
             end
 
             zap trash: [
@@ -218,8 +236,12 @@ jobs:
 
               The app will guide you through the setup on first launch.
 
-              Since this is an ad-hoc signed open-source app, if macOS blocks it:
-                xattr -cr /Applications/KeyValue.app
+              Since this is an ad-hoc signed open-source app, if macOS blocks it,
+              launch directly from Terminal (bypasses Gatekeeper on all versions):
+                /Applications/KeyValue.app/Contents/MacOS/MacKeyValue &
+
+              On macOS Ventura 13 ~ Sequoia 15 you can also go to:
+                System Settings → Privacy & Security → Open Anyway
             EOS
           end
           CASKEOF

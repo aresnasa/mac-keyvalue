@@ -310,6 +310,11 @@ struct SidebarView: View {
                             .fill(Color.secondary.opacity(0.15))
                     )
             }
+            // Without contentShape the hit-test only covers drawn pixels
+            // (Label + badge). The Spacer() is transparent so clicks in
+            // the middle of the row fall through. Rectangle() makes the
+            // entire row area respond to taps.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.vertical, 2)
