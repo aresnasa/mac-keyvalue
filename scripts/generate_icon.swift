@@ -131,25 +131,35 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     //    The lock is drawn as filled shapes (not stroked arcs).
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    // ── Pre-measure K height so lock never exceeds it ──
-    let _preFontSize = s * 0.34   // same as fontSize below
-    let _preFont: NSFont = {
+    // ── Font setup (must precede lock geometry so kSize can constrain lock height) ──
+    let fontSize      = s * 0.34
+    let letterNSColor = NSColor(cgColor: letterColor)
+                        ?? NSColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
+    let serifFont: NSFont = {
         let candidates = ["Georgia-Bold", "TimesNewRomanPS-BoldMT", "Palatino-Bold"]
         for name in candidates {
-            if let f = NSFont(name: name, size: _preFontSize) { return f }
+            if let f = NSFont(name: name, size: fontSize) { return f }
         }
-        return NSFont.systemFont(ofSize: _preFontSize, weight: .bold)
+        return NSFont.systemFont(ofSize: fontSize, weight: .bold)
     }()
-    let _kCapH = ("K" as NSString).size(withAttributes: [.font: _preFont]).height * 0.72
+    let letterAttrs: [NSAttributedString.Key: Any] = [
+        .font: serifFont,
+        .foregroundColor: letterNSColor,
+    ]
+    let kSize = ("K" as NSString).size(withAttributes: letterAttrs)
 
-    // Total lock height ≤ K cap height; body width scales proportionally
-    let lockTotalH  = _kCapH                 // matches K visual cap height
-    let lockBodyW   = lockTotalH * 0.52      // body width ∝ total height
-    let lockBodyH   = lockTotalH * 0.48  // body takes less of the total height
+    // ── Lock proportions — height tracks K's line height so it never overflows ──
+    // kSize.height is the full line-box (ascent + descent + leading).
+    // Multiplying by 0.75 gives a lock whose shackle top sits comfortably below K's cap.
+    let lockTotalH  = kSize.height * 0.75    // total lock (body + shackle)
+    let lockBodyH   = lockTotalH * 0.55      // body = lower 55 % of lock
+    let lockBodyW   = lockBodyH * 1.10       // body slightly wider than tall
     let lockBodyR   = lockBodyW * 0.14
 
-    // Body position — lower portion of the lock
-    let lockBodyBotY = centerY - lockTotalH * 0.40
+    // ── Strict bottom alignment: K, lock body, V all share the same baselineY ──
+    // Centre the composition (K is the tallest element at kSize.height).
+    let baselineY    = centerY - kSize.height * 0.45   // group centred, slight room below for label
+    let lockBodyBotY = baselineY
     let lockBodyTopY = lockBodyBotY + lockBodyH
     let lockBodyCY   = (lockBodyBotY + lockBodyTopY) / 2
 
@@ -404,31 +414,14 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     // 4. LETTER "K" — positioned tightly left of the lock body
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    let fontSize = s * 0.34
-    let letterNSColor = NSColor(cgColor: letterColor) ?? NSColor(red: 0.14, green: 0.20, blue: 0.34, alpha: 1.0)
-
-    let serifFont: NSFont = {
-        let candidates = ["Georgia-Bold", "TimesNewRomanPS-BoldMT", "Palatino-Bold"]
-        for name in candidates {
-            if let f = NSFont(name: name, size: fontSize) { return f }
-        }
-        return NSFont.systemFont(ofSize: fontSize, weight: .bold)
-    }()
-
-    let letterAttrs: [NSAttributedString.Key: Any] = [
-        .font: serifFont,
-        .foregroundColor: letterNSColor,
-    ]
-
+    // (fontSize / serifFont / letterAttrs / kSize already declared above)
     let kText = "K" as NSString
-    let kSize = kText.size(withAttributes: letterAttrs)
 
-    // Position K so its right edge hugs the lock body's left edge
+    // Position K: right edge hugs lock body's left edge; bottom strictly aligned
     let lockLeftEdge = centerX - lockBodyW / 2
-    let kGap = s * 0.012   // tight gap
-    let kX = lockLeftEdge - kGap - kSize.width
-    // Vertically centre K with the lock body (not shackle)
-    let kY = lockBodyCY - kSize.height * 0.43
+    let kGap = s * 0.012
+    let kX   = lockLeftEdge - kGap - kSize.width
+    let kY   = baselineY    // ← strict bottom alignment
 
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: s * 0.003, height: -s * 0.003),
@@ -444,8 +437,8 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let vText = "V" as NSString
     let lockRightEdge = centerX + lockBodyW / 2
     let vGap = s * 0.012
-    let vX = lockRightEdge + vGap
-    let vY = kY  // same baseline as K
+    let vX   = lockRightEdge + vGap
+    let vY   = baselineY    // ← strict bottom alignment (same as K and lock)
 
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: -s * 0.003, height: -s * 0.003),
