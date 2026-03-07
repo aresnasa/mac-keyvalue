@@ -126,14 +126,25 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     //    Proportions inspired by a real padlock:
     //      - Body: wide, ~60% of lock height
     //      - Shackle: tall U-shape, ~50% of lock height, clearly above body
-    //      - Total lock height ≈ letter height
+    //      - Total lock height ≤ K cap height (never taller than the letters)
     //
     //    The lock is drawn as filled shapes (not stroked arcs).
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    // Total lock height (body + shackle) should be close to letter height
-    let lockTotalH  = s * 0.36           // ↑ taller overall lock
-    let lockBodyW   = s * 0.18
+    // ── Pre-measure K height so lock never exceeds it ──
+    let _preFontSize = s * 0.34   // same as fontSize below
+    let _preFont: NSFont = {
+        let candidates = ["Georgia-Bold", "TimesNewRomanPS-BoldMT", "Palatino-Bold"]
+        for name in candidates {
+            if let f = NSFont(name: name, size: _preFontSize) { return f }
+        }
+        return NSFont.systemFont(ofSize: _preFontSize, weight: .bold)
+    }()
+    let _kCapH = ("K" as NSString).size(withAttributes: [.font: _preFont]).height * 0.72
+
+    // Total lock height ≤ K cap height; body width scales proportionally
+    let lockTotalH  = _kCapH                 // matches K visual cap height
+    let lockBodyW   = lockTotalH * 0.52      // body width ∝ total height
     let lockBodyH   = lockTotalH * 0.48  // body takes less of the total height
     let lockBodyR   = lockBodyW * 0.14
 
@@ -144,8 +155,8 @@ func drawIcon(size pixelSize: Int) -> NSImage {
 
     // Shackle geometry — the U sits on top of the body
     // Make the shackle taller with straight vertical bars + a semicircular arc
-    let shackleBarW    = s * 0.024       // ↑ thicker bars for visibility
-    let shackleInnerW  = lockBodyW * 0.55 // slightly narrower inner gap
+    let shackleBarW    = lockBodyW * 0.13  // bar thickness proportional to body
+    let shackleInnerW  = lockBodyW * 0.50  // inner gap width
     let shackleOuterW  = shackleInnerW + shackleBarW * 2
     let shackleOuterR  = shackleOuterW / 2
     let shackleInnerR  = shackleInnerW / 2

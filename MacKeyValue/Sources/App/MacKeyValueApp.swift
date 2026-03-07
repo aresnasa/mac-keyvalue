@@ -533,32 +533,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 y: (size - kSize.height) / 2
             ), withAttributes: kAttrs)
 
-            // ── Lock icon (centre) ──
-            // Use SF Symbol "lock.fill" instead of emoji to avoid shackle clipping
-            let lockConfig = NSImage.SymbolConfiguration(pointSize: size * 0.18, weight: .regular)
-            if let lockImage = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
-                .withSymbolConfiguration(lockConfig) {
-                let lockW = lockImage.size.width
-                let lockH = lockImage.size.height
-                let lockX = (size - lockW) / 2
-                let lockY = (size - lockH) / 2
-                let lockRect = CGRect(x: lockX, y: lockY, width: lockW, height: lockH)
-                NSColor(red: 0.80, green: 0.65, blue: 0.20, alpha: 1.0).set()
-                lockImage.draw(in: lockRect)
-            } else {
-                // Fallback: draw emoji with vertical offset to prevent shackle clipping
-                let lockAttrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: size * 0.20, weight: .regular),
-                    .foregroundColor: NSColor(red: 0.80, green: 0.65, blue: 0.20, alpha: 1.0),
-                ]
-                let lockText = "🔒" as NSString
-                let lockSize = lockText.size(withAttributes: lockAttrs)
-                // Shift up slightly so the shackle top isn't clipped by letters
-                lockText.draw(at: CGPoint(
-                    x: (size - lockSize.width) / 2,
-                    y: (size - lockSize.height) / 2 + size * 0.01
-                ), withAttributes: lockAttrs)
-            }
+            // ── Lock icon (centre) — programmatic gold padlock, matches K height ──
+            // Total lock height = K letter height (cap height ≈ 72% of line height)
+            let lockTotalH  = kSize.height * 0.72   // match K cap height exactly
+            let lockBodyH   = lockTotalH * 0.50     // body = bottom half
+            let lockBodyW   = lockBodyH * 1.05      // body slightly wider than tall
+            let lockBodyR   = lockBodyW * 0.14      // rounded corners
+
+            let lockCX      = size / 2
+            let lockBotY    = (size - kSize.height) / 2    // same baseline as K
+            let lockBodyTopY = lockBotY + lockBodyH
+            let lockBodyCY   = lockBotY + lockBodyH / 2
+
+            // Shackle geometry (U-shape, closed arc over the top)
+            let sBarW   = lockBodyW * 0.13
+            let sInnerW = lockBodyW * 0.50
+            let sOuterW = sInnerW + sBarW * 2
+            let sArcCY  = lockBodyTopY + lockTotalH * 0.20   // arc centre
+            let sBotY   = lockBodyTopY - lockBodyH * 0.10    // bars sink into body
+
+            let shacklePath = CGMutablePath()
+            shacklePath.move(to:    CGPoint(x: lockCX - sOuterW/2, y: sBotY))
+            shacklePath.addLine(to: CGPoint(x: lockCX - sOuterW/2, y: sArcCY))
+            shacklePath.addArc(center: CGPoint(x: lockCX, y: sArcCY),
+                               radius: sOuterW/2, startAngle: .pi, endAngle: 0, clockwise: true)
+            shacklePath.addLine(to: CGPoint(x: lockCX + sOuterW/2, y: sBotY))
+            shacklePath.addLine(to: CGPoint(x: lockCX + sInnerW/2, y: sBotY))
+            shacklePath.addLine(to: CGPoint(x: lockCX + sInnerW/2, y: sArcCY))
+            shacklePath.addArc(center: CGPoint(x: lockCX, y: sArcCY),
+                               radius: sInnerW/2, startAngle: 0, endAngle: .pi, clockwise: false)
+            shacklePath.addLine(to: CGPoint(x: lockCX - sInnerW/2, y: sBotY))
+            shacklePath.closeSubpath()
+
+            // Draw shackle — darker gold
+            ctx.saveGState()
+            ctx.setFillColor(CGColor(red: 0.62, green: 0.46, blue: 0.10, alpha: 1.0))
+            ctx.addPath(shacklePath)
+            ctx.fillPath()
+            ctx.restoreGState()
+
+            // Draw lock body — bright gold
+            let bodyRect = CGRect(x: lockCX - lockBodyW/2, y: lockBotY,
+                                  width: lockBodyW, height: lockBodyH)
+            let bodyPath = CGPath(roundedRect: bodyRect,
+                                  cornerWidth: lockBodyR, cornerHeight: lockBodyR,
+                                  transform: nil)
+            ctx.saveGState()
+            ctx.setFillColor(CGColor(red: 0.88, green: 0.70, blue: 0.18, alpha: 1.0))
+            ctx.addPath(bodyPath)
+            ctx.fillPath()
+            // Highlight: top stripe
+            ctx.clip(to: CGRect(x: lockCX - lockBodyW/2, y: lockBodyTopY - lockBodyH*0.25,
+                                width: lockBodyW, height: lockBodyH*0.25))
+            ctx.setFillColor(CGColor(red: 1.00, green: 0.90, blue: 0.50, alpha: 0.35))
+            ctx.fill(CGRect(x: lockCX - lockBodyW/2, y: lockBodyTopY - lockBodyH*0.25,
+                            width: lockBodyW, height: lockBodyH*0.25))
+            ctx.restoreGState()
+
+            // Divider line near top of body
+            ctx.saveGState()
+            ctx.setStrokeColor(CGColor(red: 0.45, green: 0.32, blue: 0.06, alpha: 0.35))
+            ctx.setLineWidth(lockBodyH * 0.022)
+            let divY = lockBodyTopY - lockBodyH * 0.18
+            ctx.move(to:    CGPoint(x: lockCX - lockBodyW * 0.40, y: divY))
+            ctx.addLine(to: CGPoint(x: lockCX + lockBodyW * 0.40, y: divY))
+            ctx.strokePath()
+            ctx.restoreGState()
+
+            // Keyhole circle + slot — deep gold
+            let khR   = lockBodyW * 0.11
+            let khCY  = lockBodyCY - lockBodyH * 0.04
+            ctx.saveGState()
+            ctx.setFillColor(CGColor(red: 0.38, green: 0.26, blue: 0.04, alpha: 1.0))
+            ctx.fillEllipse(in: CGRect(x: lockCX - khR, y: khCY - khR,
+                                       width: khR * 2, height: khR * 2))
+            let slotW = khR * 0.55
+            let slotH = lockBodyH * 0.20
+            ctx.fill(CGRect(x: lockCX - slotW/2, y: khCY - khR - slotH,
+                            width: slotW, height: slotH))
+            ctx.restoreGState()
 
             // ── "V" letter (right) ──
             let vAttrs: [NSAttributedString.Key: Any] = [
