@@ -5,7 +5,7 @@
 <h1 align="center">KeyValue</h1>
 
 <p align="center">
-  <strong>K🔒V — 安全的密码与键值对管理工具</strong>
+  <strong>K🔒V — Secure Password & Key-Value Manager for macOS</strong>
 </p>
 
 <p align="center">
@@ -17,142 +17,177 @@
 </p>
 
 <p align="center">
-  加密存储 · 快捷键入 · 剪贴板管理 · Gist 同步
+  Encrypted Storage · Hotkey Typing · Clipboard Management · Gist Sync
+</p>
+
+<p align="center">
+  <a href="README_zhCN.md">🇨🇳 中文文档</a>
 </p>
 
 ---
 
-## 📦 安装
+## 📦 Installation
 
-### 方式一：下载 DMG（推荐）
+### Option 1: Homebrew (Recommended)
 
-1. 前往 [Releases](https://github.com/aresnasa/mac-keyvalue/releases/latest) 下载最新的 `.dmg` 文件
-2. 打开 DMG，将 **KeyValue.app** 拖入 **Applications** 文件夹
-3. 首次打开：**右键** 点击 KeyValue.app → 选择「**打开**」
+```bash
+brew tap aresnasa/tap
+brew install --cask keyvalue
+```
 
-> ⚠️ 本应用是免费开源软件，采用 ad-hoc 签名。macOS 首次打开时会提示"无法验证开发者"，右键 → 打开即可。
-> 也可以执行：`xattr -cr /Applications/KeyValue.app`
+### Option 2: Download DMG
 
-### 方式二：从源码构建
+1. Go to [Releases](https://github.com/aresnasa/mac-keyvalue/releases/latest) and download the latest `.dmg`
+2. Open the DMG and drag **KeyValue.app** into the **Applications** folder
+3. First launch: **Right-click** KeyValue.app → select **Open**
+
+> ⚠️ This is a free, open-source app with ad-hoc signing. macOS will warn "the developer cannot be verified" on first launch — right-click → Open to bypass.
+> Alternatively run: `xattr -cr /Applications/KeyValue.app`
+
+### Option 3: Build from Source
 
 ```bash
 git clone https://github.com/aresnasa/mac-keyvalue.git
 cd mac-keyvalue/MacKeyValue
 
-# 构建并运行
+# Build and run
 ./build.sh --run
 
-# 或构建 DMG 安装包
+# Or build a DMG installer
 ./build.sh --dmg
 ```
 
 <details>
-<summary>构建脚本更多用法</summary>
+<summary>Build script usage</summary>
 
 ```bash
-./build.sh              # 构建 Release .app
-./build.sh debug        # 构建 Debug .app
-./build.sh --dmg        # 构建 + 打包 DMG
-./build.sh --dmg --run  # 构建 + DMG + 启动
-./build.sh --icons      # 仅重新生成图标
-./build.sh --clean      # 清理构建产物
-./build.sh --help       # 完整帮助
+./build.sh              # Build Release .app
+./build.sh debug        # Build Debug .app
+./build.sh --run        # Build + launch
+./build.sh --dmg        # Build + package DMG
+./build.sh --dmg --run  # Build + DMG + launch
+./build.sh --icons      # Regenerate app icons only
+./build.sh --clean      # Remove all build artifacts
+./build.sh --help       # Full help
 ```
 
 </details>
 
-### 🔐 首次启动权限
+---
 
-启动后应用会引导你授予两个系统权限：
+## 🚀 Getting Started
 
-| 权限 | 用途 | 设置路径 |
-|------|------|---------|
-| **辅助功能** (Accessibility) | 模拟键盘输入密码 | 系统设置 → 隐私与安全性 → 辅助功能 |
-| **输入监控** (Input Monitoring) | 创建键盘事件 | 系统设置 → 隐私与安全性 → 输入监控 |
+### First-Launch Permissions
 
-两个开关都打开后，按应用提示重启即可。
+On first launch the app will guide you through granting two system permissions:
+
+| Permission | Purpose | Settings Path |
+|---|---|---|
+| **Accessibility** | Simulate keyboard input for passwords | System Settings → Privacy & Security → Accessibility |
+| **Input Monitoring** | Create keyboard events | System Settings → Privacy & Security → Input Monitoring |
+
+Enable both toggles for KeyValue, then restart the app as prompted.
+
+### Basic Usage
+
+1. **Add an entry** — Click the `+` button or press `⌘N` to create a new key-value entry. Choose a category (Password, Code Snippet, Command, etc.), fill in the title, key, and value, then save.
+
+2. **Copy a value** — Select an entry and press `⇧⌘C`, or hover and click the copy icon. The value is decrypted, copied to the clipboard, and automatically cleared after 120 seconds.
+
+3. **Paste to a target window** — Press `⇧⌘V` on an entry. The app hides itself, gives you 3 seconds to click the target input field, then simulates `⌘V` into the frontmost application.
+
+4. **Type into a password field** — Press `⇧⌘T` on an entry. This types the value character-by-character via simulated keystrokes — perfect for **PVE/KVM web consoles**, **noVNC**, and any field that blocks paste.
+
+5. **Global hotkeys** — Bind any entry to a global hotkey in **Settings → Hotkeys**. Press the hotkey from anywhere to instantly type the password into the currently focused window.
+
+### Default Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `⌘⇧K` | Show / Hide main window |
+| `⌘⌥Space` | Quick search |
+| `⌘⇧V` | Clipboard history |
+| `⌘⇧⌥P` | Toggle privacy mode |
+| `⌘1` | Switch between Compact / Full mode |
+
+### Two UI Modes
+
+- **Compact mode** (default) — A slim, searchable list with hover action buttons (Copy / Paste / Type). Optimized for quick lookups.
+- **Full mode** — A 3-column management interface with filtering, sorting, detailed views, and entry editing. Toggle with `⌘1`.
 
 ---
 
-## ✨ 功能特性
+## ✨ Features
 
-### 🔐 AES-256 加密存储
+### 🔐 AES-256 Encrypted Storage
 
-- **AES-256-GCM** 认证加密，防篡改
-- 主密钥存储在 macOS **Keychain** 中
-- 支持密钥轮换和 HKDF-SHA256 密钥派生
-- 每次加密使用随机 Nonce
+- **AES-256-GCM** authenticated encryption (tamper-proof)
+- Master key stored in the macOS **Keychain**
+- Key rotation and HKDF-SHA256 key derivation
+- Random nonce per encryption operation
 
-### ⌨️ 快捷键 & 键盘模拟
+### ⌨️ Hotkeys & Keyboard Simulation
 
-- 全局快捷键一键复制密码
-- **模拟键盘逐字符输入** — 绕过禁止粘贴的密码框（PVE/KVM 等 Web 控制台）
-- 自动 **⌘V 粘贴**到目标窗口
-- 自定义快捷键绑定
+- Global hotkeys to copy or type passwords with a single keystroke
+- **Simulated keyboard character-by-character typing** — bypasses paste-blocking password fields (PVE/KVM web consoles, noVNC, remote desktops)
+- Automatic **⌘V paste** into the target window
+- Custom hotkey bindings per entry
 
-| 快捷键 | 功能 |
-|--------|------|
-| `⌘⇧K
-` | 显示/隐藏主窗口 |
-| `⌘⌥Space` | 快速搜索 |
-| `⌘⇧V` | 剪贴板历史 |
-| `⌘⇧⌥P` | 切换隐私模式 |
+### 📋 Smart Clipboard
 
-### 📋 智能剪贴板
+- Automatic clipboard history (up to 500 entries)
+- Smart content-type detection (text, URLs, file paths, …)
+- Source application tracking
+- Pin important clipboard items
+- Auto-clear clipboard after copying passwords
 
-- 自动记录剪贴板历史（最多 500 条）
-- 智能识别内容类型（文本、链接、路径…）
-- 记录来源应用
-- Pin 固定重要条目
-- 复制密码后自动清除剪贴板
+### ☁️ GitHub Gist Sync
 
-### ☁️ GitHub Gist 同步
+- Bi-directional sync with GitHub Gist
+- Timestamp-based automatic conflict resolution
+- Token stored securely in Keychain
+- **Encrypted values and private entries are never uploaded**
 
-- 双向同步到 GitHub Gist
-- 基于时间戳自动合并冲突
-- Token 安全存储在 Keychain
-- **加密值和私密条目永远不会上传**
+### 🔒 Privacy Mode
 
-### 🔒 隐私模式
+- Clipboard operations are not recorded
+- All data stored 100% locally
+- Private entries excluded from sync
 
-- 剪贴板操作不被记录
-- 所有数据 100% 本地存储
-- 私密条目不参与同步
+### 🗂️ Entry Management
 
-### 🗂️ 条目管理
-
-- 分类：密码 / 代码片段 / 命令 / 剪贴板 / 其他
-- 标签 + 收藏 + 全文搜索（支持正则）
-- 使用统计和排序
-- JSON 导入/导出
-- 精简模式 & 管理模式 双界面
+- Categories: Password / Code Snippet / Command / Clipboard / Other
+- Tags, favorites, and full-text search (regex supported: `/pattern/`)
+- Usage statistics and sorting
+- JSON import / export
+- Compact mode & Full management mode
 
 ---
 
-## 🏗️ 项目架构
+## 🏗️ Architecture
 
 ```
 MacKeyValue/
 ├── Package.swift                    # Swift Package Manager
-├── build.sh                         # 构建 & 打包脚本
+├── build.sh                         # Build & packaging script
 ├── Sources/
 │   ├── App/
-│   │   └── MacKeyValueApp.swift     # 入口、菜单栏、AppDelegate
+│   │   └── MacKeyValueApp.swift     # Entry point, menu bar, AppDelegate
 │   ├── Models/
-│   │   └── KeyValueEntry.swift      # 数据模型
+│   │   └── KeyValueEntry.swift      # Data model
 │   ├── Services/
-│   │   ├── EncryptionService.swift  # AES-256-GCM 加密
-│   │   ├── StorageService.swift     # 本地持久化
-│   │   ├── ClipboardService.swift   # 剪贴板 & 键盘模拟
-│   │   ├── HotkeyService.swift      # 全局快捷键 (Carbon)
-│   │   ├── GistSyncService.swift    # Gist 同步
-│   │   └── BiometricService.swift   # Touch ID 认证
+│   │   ├── EncryptionService.swift  # AES-256-GCM encryption
+│   │   ├── StorageService.swift     # Local persistence
+│   │   ├── ClipboardService.swift   # Clipboard & keyboard simulation
+│   │   ├── HotkeyService.swift      # Global hotkeys (Carbon)
+│   │   ├── GistSyncService.swift    # Gist sync
+│   │   └── BiometricService.swift   # Touch ID authentication
 │   ├── ViewModels/
-│   │   └── AppViewModel.swift       # MVVM 视图模型
+│   │   └── AppViewModel.swift       # MVVM view model
 │   └── Views/
-│       ├── ContentView.swift        # 主界面
-│       ├── CompactView.swift        # 精简模式
-│       └── AccessibilityGuideOverlay.swift  # 权限引导
+│       ├── ContentView.swift        # Main interface
+│       ├── CompactView.swift        # Compact mode
+│       └── AccessibilityGuideOverlay.swift  # Permission guide
 ├── Resources/
 │   ├── Info.plist
 │   ├── MacKeyValue.entitlements
@@ -161,79 +196,92 @@ MacKeyValue/
 └── Tests/
 ```
 
+### Design Patterns
+
+- **MVVM** + Service Layer
+- **Combine** for reactive data flow
+- **async/await** for asynchronous operations
+- **@MainActor** for UI thread safety
+- **CGEvent**-based keyboard simulation with lazy-init CGEventSource
+
 ---
 
-## 🔒 安全架构
+## 🔒 Security Architecture
 
 ```
-用户数据 → JSON 编码 → AES-256-GCM 加密 → 本地文件
-                               ↑
-                          主密钥 (256-bit)
-                               ↑
-                       macOS Keychain (硬件保护)
+User data → JSON encoding → AES-256-GCM encryption → Local file
+                                     ↑
+                              Master key (256-bit)
+                                     ↑
+                           macOS Keychain (hardware-protected)
 ```
 
-- 所有敏感数据使用 AES-256-GCM 认证加密
-- 主密钥由 macOS Keychain 保护（设备解锁时可访问）
-- 每次加密使用 `SecRandomCopyBytes` 生成 12 字节随机 Nonce
-- Gist 同步仅传输元数据，**加密值永远不会离开本机**
+- All sensitive data encrypted with AES-256-GCM authenticated encryption
+- Master key protected by the macOS Keychain (accessible when device is unlocked)
+- 12-byte random nonce per encryption via `SecRandomCopyBytes`
+- Gist sync only transmits metadata — **encrypted values never leave the device**
 
 ---
 
-## 📦 依赖
+## 📦 Dependencies
 
-| 包名 | 用途 |
-|------|------|
-| [swift-crypto](https://github.com/apple/swift-crypto) | AES-GCM 加密、HKDF 密钥派生 |
-| [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) | 全局快捷键 |
-| [SwiftSoup](https://github.com/scinfu/SwiftSoup) | HTML 内容解析 |
+| Package | Purpose |
+|---|---|
+| [swift-crypto](https://github.com/apple/swift-crypto) | AES-GCM encryption, HKDF key derivation |
+| [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) | Global hotkeys |
+| [SwiftSoup](https://github.com/scinfu/SwiftSoup) | HTML content parsing |
 
 ---
 
-## 🛠️ 开发
+## 🛠️ Development
 
-### 环境要求
+### Requirements
 
-- **macOS 13.0+** (Ventura 或更高)
-- **Xcode 15.0+** 或 **Swift 5.9+**
+- **macOS 13.0+** (Ventura or later)
+- **Xcode 15.0+** or **Swift 5.9+**
 
-### 快速开始
+### Quick Start
 
 ```bash
 cd MacKeyValue
 
-# SPM 构建 & 运行
+# Build & run with SPM
 swift run MacKeyValue
 
-# 或使用 Xcode
+# Or open in Xcode
 open Package.swift
 ```
 
-### 架构模式
+### Release
 
-- **MVVM** + Service Layer
-- **Combine** 响应式数据流
-- **async/await** 异步操作
-- **@MainActor** UI 线程安全
+The release script automates the full cycle: build DMG → git tag → GitHub Release → Homebrew tap update.
 
----
+```bash
+./scripts/release.sh 1.2.0              # Release v1.2.0
+./scripts/release.sh 1.2.0 --dry-run    # Preview without publishing
+./scripts/release.sh 1.2.0 --skip-brew  # Skip Homebrew update
+```
 
-## ☕ 支持项目
-
-如果 KeyValue 对你有帮助，欢迎：
-
-- ⭐ 在 GitHub 上 **Star** 本项目
-- 🐛 提交 [Issue](https://github.com/aresnasa/mac-keyvalue/issues) 反馈问题或建议
-- 🔀 提交 [Pull Request](https://github.com/aresnasa/mac-keyvalue/pulls) 参与开发
-- ☕ 在应用内 **关于 → 请喝咖啡** 扫码赞赏
-
-> 你的每一个 Star ⭐ 和反馈都是持续开发的动力！
+Prerequisites: `gh` CLI authenticated (`gh auth login`).
 
 ---
 
-## 📄 许可证
+## ☕ Support
 
-[MIT License](LICENSE) — 自由使用、修改和分发。
+If KeyValue is useful to you:
+
+- ⭐ **Star** this project on GitHub
+- 🐛 File an [Issue](https://github.com/aresnasa/mac-keyvalue/issues) for bugs or feature requests
+- 🔀 Submit a [Pull Request](https://github.com/aresnasa/mac-keyvalue/pulls)
+- ☕ Buy me a coffee via **About → Donate** in the app
+
+> Every Star ⭐ and piece of feedback keeps development going!
+
+---
+
+## 📄 License
+
+[MIT License](LICENSE) — free to use, modify, and distribute.
 
 ---
 

@@ -534,16 +534,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ), withAttributes: kAttrs)
 
             // ── Lock icon (centre) ──
-            let lockAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: size * 0.22, weight: .regular),
-                .foregroundColor: NSColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 1.0),
-            ]
-            let lockText = "🔒" as NSString
-            let lockSize = lockText.size(withAttributes: lockAttrs)
-            lockText.draw(at: CGPoint(
-                x: (size - lockSize.width) / 2,
-                y: (size - lockSize.height) / 2
-            ), withAttributes: lockAttrs)
+            // Use SF Symbol "lock.fill" instead of emoji to avoid shackle clipping
+            let lockConfig = NSImage.SymbolConfiguration(pointSize: size * 0.18, weight: .regular)
+            if let lockImage = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(lockConfig) {
+                let lockW = lockImage.size.width
+                let lockH = lockImage.size.height
+                let lockX = (size - lockW) / 2
+                let lockY = (size - lockH) / 2
+                let lockRect = CGRect(x: lockX, y: lockY, width: lockW, height: lockH)
+                NSColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 1.0).set()
+                lockImage.draw(in: lockRect)
+            } else {
+                // Fallback: draw emoji with vertical offset to prevent shackle clipping
+                let lockAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: size * 0.20, weight: .regular),
+                    .foregroundColor: NSColor(red: 0.22, green: 0.27, blue: 0.38, alpha: 1.0),
+                ]
+                let lockText = "🔒" as NSString
+                let lockSize = lockText.size(withAttributes: lockAttrs)
+                // Shift up slightly so the shackle top isn't clipped by letters
+                lockText.draw(at: CGPoint(
+                    x: (size - lockSize.width) / 2,
+                    y: (size - lockSize.height) / 2 + size * 0.01
+                ), withAttributes: lockAttrs)
+            }
 
             // ── "V" letter (right) ──
             let vAttrs: [NSAttributedString.Key: Any] = [

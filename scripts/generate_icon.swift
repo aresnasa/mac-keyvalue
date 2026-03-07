@@ -132,24 +132,27 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     // Total lock height (body + shackle) should be close to letter height
-    let lockTotalH  = s * 0.30
+    let lockTotalH  = s * 0.36           // ↑ taller overall lock
     let lockBodyW   = s * 0.18
-    let lockBodyH   = lockTotalH * 0.55
+    let lockBodyH   = lockTotalH * 0.48  // body takes less of the total height
     let lockBodyR   = lockBodyW * 0.14
 
     // Body position — lower portion of the lock
-    let lockBodyBotY = centerY - lockTotalH * 0.45
+    let lockBodyBotY = centerY - lockTotalH * 0.40
     let lockBodyTopY = lockBodyBotY + lockBodyH
     let lockBodyCY   = (lockBodyBotY + lockBodyTopY) / 2
 
     // Shackle geometry — the U sits on top of the body
-    let shackleBarW    = s * 0.020       // thickness of each vertical bar
-    let shackleInnerW  = lockBodyW * 0.65 // inner gap width
+    // Make the shackle taller with straight vertical bars + a semicircular arc
+    let shackleBarW    = s * 0.024       // ↑ thicker bars for visibility
+    let shackleInnerW  = lockBodyW * 0.55 // slightly narrower inner gap
     let shackleOuterW  = shackleInnerW + shackleBarW * 2
     let shackleOuterR  = shackleOuterW / 2
     let shackleInnerR  = shackleInnerW / 2
-    let shackleArcCY   = lockBodyTopY    // arc centre sits at body top
-    let shackleTopY    = shackleArcCY + shackleOuterR // very top of shackle
+    // The arc centre is raised above the body top by straight bar height
+    let shackleStraightH = lockTotalH * 0.18  // straight vertical section of shackle
+    let shackleArcCY   = lockBodyTopY + shackleStraightH  // arc centre above body
+    let shackleTopY    = shackleArcCY + shackleOuterR     // very top of shackle
 
     // ── 3a. Golden glow behind the entire lock (subtle halo) ──
     ctx.saveGState()

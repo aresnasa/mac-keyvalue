@@ -309,30 +309,30 @@ step "Creating GitHub Release"
 
 RELEASE_NOTES="## ${APP_NAME} ${TAG}
 
-### 📦 安装方法
+### 📦 Installation
 
-#### 方式一：下载 DMG（推荐）
-1. 下载下方的 \`.dmg\` 文件
-2. 打开 DMG，将 **KeyValue.app** 拖入 **Applications** 文件夹
-3. 首次打开：右键点击 KeyValue.app → 选择「打开」
-
-> ⚠️ 本应用是免费开源软件，采用 ad-hoc 签名。macOS 首次打开时会提示"无法验证开发者"，右键 → 打开即可。
-> 也可执行：\`xattr -cr /Applications/KeyValue.app\`
-
-#### 方式二：Homebrew
+#### Option 1: Homebrew (Recommended)
 \`\`\`bash
 brew tap ${GITHUB_OWNER}/tap
 brew install --cask keyvalue
 \`\`\`
 
-### 🔐 权限
+#### Option 2: Download DMG
+1. Download the \`.dmg\` file below
+2. Open the DMG and drag **KeyValue.app** into **Applications**
+3. First launch: right-click KeyValue.app → select **Open**
 
-首次启动后，应用会引导你授予：
-- **辅助功能** (Accessibility) — 模拟键盘输入
-- **输入监控** (Input Monitoring) — 创建键盘事件
+> ⚠️ This is a free, open-source app with ad-hoc signing. macOS will warn about an unverified developer on first launch — right-click → Open to bypass.
+> Alternatively: \`xattr -cr /Applications/KeyValue.app\`
 
-### 🛠️ 环境要求
-- macOS 13.0+ (Ventura 或更高)
+### 🔐 Permissions
+
+On first launch, the app will guide you through granting:
+- **Accessibility** — simulate keyboard input
+- **Input Monitoring** — create keyboard events
+
+### 🛠️ Requirements
+- macOS 13.0+ (Ventura or later)
 - Apple Silicon (arm64)
 
 ---
