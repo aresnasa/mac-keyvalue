@@ -194,6 +194,7 @@
 				3D3287BFCA0FF58A62A56D5D /* Sources */,
 				94E9F5EA046F2AA249F30DE3 /* Frameworks */,
 				D4F18BC070EF48AF19D88B6A /* Resources */,
+				B3C7D9E1F2A34B56C78D9E0F /* Copy AppIcon.icns */,
 			);
 			buildRules = (
 			);
@@ -276,7 +277,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				D150A85CEEEAE2924AF97027 /* Assets.xcassets in Resources */,
-				0BE2763B5F18AC90C1E52162 /* AppIcon.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -308,6 +308,30 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+/* Begin PBXShellScriptBuildPhase section */
+		B3C7D9E1F2A34B56C78D9E0F /* Copy AppIcon.icns */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/Resources/AppIcon.icns",
+			);
+			name = "Copy AppIcon.icns";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(CODESIGNING_FOLDER_PATH)/Contents/Resources/AppIcon.icns",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SRC=\"$PROJECT_DIR/Resources/AppIcon.icns\"\nDST=\"$CODESIGNING_FOLDER_PATH/Contents/Resources/AppIcon.icns\"\nif [ -f \"$SRC\" ]; then\n  cp -f \"$SRC\" \"$DST\"\n  echo \"note: AppIcon.icns overwritten with hand-crafted version\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 
 /* Begin PBXTargetDependency section */
 		50D6A7D2654E82A19002085D /* PBXTargetDependency */ = {

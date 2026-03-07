@@ -62,13 +62,17 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let bounds = CGRect(x: 0, y: 0, width: s, height: s)
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 1. BACKGROUND — white rounded rect with subtle warm gradient
+    // 1. BACKGROUND — full-bleed white gradient (macOS 11+ requirement)
+    //
+    //    macOS Big Sur+ expects app icons to fill the ENTIRE canvas with
+    //    NO transparent corners. The system applies its own squircle mask
+    //    and drop shadow. Pre-baked rounded corners + transparent alpha
+    //    cause the dark background to bleed through the squircle edges.
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    let cornerRadius = s * 0.22
-    let bgInset = s * 0.008
-    let bgRect = bounds.insetBy(dx: bgInset, dy: bgInset)
-    let bgPath = roundedRectPath(bgRect, radius: cornerRadius)
+    // Full-bleed path: no inset, no rounded corners in the PNG itself.
+    // macOS handles all squircle clipping.
+    let bgPath = CGPath(rect: bounds, transform: nil)
 
     let bgColors: [CGColor] = [
         CGColor(red: 1.00, green: 1.00, blue: 1.00, alpha: 1.0),
@@ -79,14 +83,15 @@ func drawIcon(size pixelSize: Int) -> NSImage {
                             colors: bgColors as CFArray,
                             locations: [0.0, 0.6, 1.0])!
 
-    ctx.saveGState()
-    ctx.addPath(bgPath)
-    ctx.clip()
+    // First, clear the canvas to opaque white (no transparent pixels anywhere)
+    ctx.setFillColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0))
+    ctx.fill(bounds)
+
+    // Then draw the gradient over the full canvas
     ctx.drawLinearGradient(bgGrad,
                            start: CGPoint(x: s / 2, y: s),
                            end: CGPoint(x: s / 2, y: 0),
                            options: [])
-    ctx.restoreGState()
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 2. LAYOUT — K [padlock] V
@@ -148,28 +153,60 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     ]
     let kSize = ("K" as NSString).size(withAttributes: letterAttrs)
 
-    // ── K draw-origin (declared here so lock geometry can reference it) ──
-    // NSString draws from bounding-box bottom; centering the box at centerY:
-    let kY = centerY - kSize.height * 0.50
+    // ── STRICT BOTTOM ALIGNMENT via CoreText exact typographic metrics ──
+    //
+    // Instead of hand-tuned fractions, measure the real ascent/descent of the
+    // chosen font so all three elements (K, lock body, V) share one precise
+    // baseline — the visual bottom of the capital glyphs.
+    //
+    //   ctAscent  = baseline → cap top   (positive, ≈ cap-height)
+    //   ctDescent = baseline → box floor (positive, small for all-caps text)
+    //
+    // Visible-group height = ctAscent + ctDescent
+    // To centre the group at canvas midpoint:
+    //   baselineY = centerY − (ctAscent − ctDescent) / 2
+    let kAttribStr = NSAttributedString(string: "K", attributes: letterAttrs)
+    let ctLine     = CTLineCreateWithAttributedString(kAttribStr as CFAttributedString)
+    var ctAscent:  CGFloat = 0
+    var ctDescent: CGFloat = 0
+    var ctLeading: CGFloat = 0
+    CTLineGetTypographicBounds(ctLine, &ctAscent, &ctDescent, &ctLeading)
+    // ctDescent is a positive magnitude (distance below baseline)
 
-    // ── Lock proportions — lock spans K's full visual (glyph) height ──
-    // Georgia Bold line-box fractions (measured via CoreText):
-    //   descent fraction  ≈ 0.19  → K glyph bottom = kY + kSize.height * 0.19
-    //   cap-top fraction  ≈ 0.80  → K glyph top    = kY + kSize.height * 0.80
-    // shackleTopY = lockBodyBotY + lockTotalH * spanFactor
-    //   spanFactor = bodyRatio + straightRatio + outerArcRatio
-    //              = 0.55 + 0.18 + (0.55 * 1.10 * 0.38)  ≈ 0.960
-    // Solving for lockTotalH so shackleTopY == K glyph top:
-    let kGlyphBotFrac: CGFloat = 0.19
-    let kGlyphTopFrac: CGFloat = 0.80
-    let spanFactor:    CGFloat = 0.55 + 0.18 + 0.55 * 1.10 * 0.38   // ≈ 0.960
-    let lockTotalH  = kSize.height * (kGlyphTopFrac - kGlyphBotFrac) / spanFactor
-    let lockBodyH   = lockTotalH * 0.55      // body = lower 55 % of lock
-    let lockBodyW   = lockBodyH * 1.10       // body slightly wider than tall
+    // ── Lock proportions — total lock height == cap height of K / V ──
+    //
+    //  ctAscent includes ascenders (like 'd', 'h') and is ~30 % taller than
+    //  the actual capital-letter height (capHeight).  Using ctAscent made the
+    //  shackle peak extend well above the tops of K and V, making the lock
+    //  look disproportionately tall.  serifFont.capHeight is the correct value.
+    let capH        = serifFont.capHeight  // true cap-height of the chosen font
+    // Lock total height = 88 % of cap-height so the shackle peak sits visibly
+    // below the tops of K and V (previously = capH → shackle nearly touched
+    // K's top, and with shadows it appeared to exceed it).
+    let lockTotalH  = capH * 0.88        // shackle peak ~12 % below K / V tops
+    let lockBodyH   = lockTotalH * 0.58  // body = lower 58 % (slightly larger body)
+    let lockBodyW   = lockBodyH * 1.10   // body slightly wider than tall
     let lockBodyR   = lockBodyW * 0.14
 
-    // Lock bottom aligned to K glyph bottom; everything else derived from this
-    let lockBodyBotY = kY + kSize.height * kGlyphBotFrac
+    // ── Baseline Y: strictly centre the visible group (cap-height range) ──
+    //
+    //  We want the midpoint of [baseline … baseline + capH] to sit at
+    //  centerY, so:
+    //    baselineY + capH / 2  = centerY
+    //    baselineY             = centerY - capH / 2
+    //
+    //  (The old formula used ctAscent which shifted the whole group downward
+    //   because ctAscent > capH; the new formula is exact for all-caps text.)
+    let baselineY    = centerY - capH / 2
+
+    // kY = NSString draw-origin (bounding-box bottom-left in AppKit bottom-origin coords)
+    // The bounding box starts ctDescent below the baseline, so:
+    //   kY = baselineY - ctDescent
+    // Both K and V share this same kY → baselines align exactly.
+    let kY           = baselineY - ctDescent
+
+    // Lock body bottom sits on the shared baseline → strict bottom alignment ✓
+    let lockBodyBotY = baselineY
     let lockBodyTopY = lockBodyBotY + lockBodyH
     let lockBodyCY   = (lockBodyBotY + lockBodyTopY) / 2
 
@@ -181,7 +218,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     let shackleOuterR  = shackleOuterW / 2
     let shackleInnerR  = shackleInnerW / 2
     // The arc centre is raised above the body top by straight bar height
-    let shackleStraightH = lockTotalH * 0.18  // straight vertical section of shackle
+    let shackleStraightH = lockTotalH * 0.05  // straight vertical section of shackle (shorter → shackle stays well within capH)
     let shackleArcCY   = lockBodyTopY + shackleStraightH  // arc centre above body
     let shackleTopY    = shackleArcCY + shackleOuterR     // very top of shackle
 
@@ -576,23 +613,34 @@ func drawIcon(size pixelSize: Int) -> NSImage {
 // MARK: - Save PNG
 
 func savePNG(_ image: NSImage, pixelSize: Int, to url: URL) {
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
-                               pixelsWide: pixelSize,
-                               pixelsHigh: pixelSize,
-                               bitsPerSample: 8,
-                               samplesPerPixel: 4,
-                               hasAlpha: true,
-                               isPlanar: false,
-                               colorSpaceName: .deviceRGB,
-                               bytesPerRow: 0,
-                               bitsPerPixel: 0)!
-    rep.size = NSSize(width: pixelSize, height: pixelSize)
+    // Render into a CGContext backed by the sRGB colour space.
+    // This guarantees the correct ICC profile is embedded in the PNG, so
+    // colours look identical on standard-gamut and wide-gamut (P3) displays.
+    let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+    guard let ctx = CGContext(data: nil,
+                              width: pixelSize, height: pixelSize,
+                              bitsPerComponent: 8,
+                              bytesPerRow: pixelSize * 4,
+                              space: srgb,
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+        print("  ❌ CGContext creation failed for \(url.lastPathComponent)")
+        return
+    }
 
+    let nsCtx = NSGraphicsContext(cgContext: ctx, flipped: false)
     NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSGraphicsContext.current = nsCtx
     image.draw(in: NSRect(x: 0, y: 0, width: pixelSize, height: pixelSize),
                from: .zero, operation: .copy, fraction: 1.0)
     NSGraphicsContext.restoreGraphicsState()
+
+    guard let cgImage = ctx.makeImage() else {
+        print("  ❌ makeImage() failed for \(url.lastPathComponent)")
+        return
+    }
+
+    let rep = NSBitmapImageRep(cgImage: cgImage)
+    rep.size = NSSize(width: pixelSize, height: pixelSize)
 
     guard let pngData = rep.representation(using: .png, properties: [:]) else {
         print("  ❌ Failed to create PNG data for \(url.lastPathComponent)")
@@ -608,40 +656,41 @@ func savePNG(_ image: NSImage, pixelSize: Int, to url: URL) {
 }
 
 // MARK: - Main
+//
+// SINGLE SOURCE OF TRUTH:
+//   All icons are generated into ONE location:
+//     MacKeyValue/Resources/Assets.xcassets/AppIcon.appiconset/
+//
+//   From there:
+//     • actool compiles them into Assets.car  (used by the .app bundle)
+//     • iconutil packages them into AppIcon.icns (used by build.sh + bare exec)
+//
+//   The old duplicate MacKeyValue/Resources/AppIcon.appiconset/ has been removed.
 
 let scriptDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
 let projectRoot = scriptDir.deletingLastPathComponent()
 
+// ── Single canonical iconset directory (inside Assets.xcassets) ──
 let iconsetDir = projectRoot
-    .appendingPathComponent("MacKeyValue")
-    .appendingPathComponent("Resources")
-    .appendingPathComponent("AppIcon.appiconset")
-
-let assetsIconsetDir = projectRoot
     .appendingPathComponent("MacKeyValue")
     .appendingPathComponent("Resources")
     .appendingPathComponent("Assets.xcassets")
     .appendingPathComponent("AppIcon.appiconset")
 
 print("🎨 Generating KeyValue icon — K 🔒 V")
-print("   Target: \(iconsetDir.path)")
+print("   Single source: \(iconsetDir.path)")
 
-// Ensure directories exist
+// Ensure directory exists
 try? FileManager.default.createDirectory(at: iconsetDir, withIntermediateDirectories: true)
-try? FileManager.default.createDirectory(at: assetsIconsetDir, withIntermediateDirectories: true)
 
 for iconSize in iconSizes {
-    let px = iconSize.pixelSize
+    let px    = iconSize.pixelSize
     let image = drawIcon(size: px)
-    let url = iconsetDir.appendingPathComponent(iconSize.filename)
+    let url   = iconsetDir.appendingPathComponent(iconSize.filename)
     savePNG(image, pixelSize: px, to: url)
-
-    // Copy to assets catalog too
-    let assetsURL = assetsIconsetDir.appendingPathComponent(iconSize.filename)
-    savePNG(image, pixelSize: px, to: assetsURL)
 }
 
-// ── Contents.json for both iconset directories ──
+// ── Contents.json (single location) ──
 let contentsJSON = """
 {
   "images" : [
@@ -660,13 +709,11 @@ let contentsJSON = """
 }
 """
 
-for dir in [iconsetDir, assetsIconsetDir] {
-    let contentsURL = dir.appendingPathComponent("Contents.json")
-    try! contentsJSON.write(to: contentsURL, atomically: true, encoding: .utf8)
-}
-print("\n  ✅ Contents.json (both locations)")
+let contentsURL = iconsetDir.appendingPathComponent("Contents.json")
+try! contentsJSON.write(to: contentsURL, atomically: true, encoding: .utf8)
+print("\n  ✅ Contents.json")
 
-// ── Generate .icns file ──
+// ── Generate AppIcon.icns from the single iconset directory ──
 print("\n🔧 Generating AppIcon.icns …")
 
 let icnsURL = projectRoot
@@ -707,6 +754,28 @@ do {
 }
 
 try? FileManager.default.removeItem(at: tmpIconset)
+
+// ── Touch Assets.xcassets root Contents.json ──────────────────────────────
+//
+//  Xcode's incremental build system uses file modification times to decide
+//  whether to re-run actool.  After updating only the PNG files inside
+//  AppIcon.appiconset/, Xcode sometimes misses the change because it tracks
+//  the *catalogue root* Contents.json as the primary dependency.
+//  Touching that file guarantees a fresh actool run on the next Xcode build.
+let assetsRootContents = projectRoot
+    .appendingPathComponent("MacKeyValue")
+    .appendingPathComponent("Resources")
+    .appendingPathComponent("Assets.xcassets")
+    .appendingPathComponent("Contents.json")
+
+if FileManager.default.fileExists(atPath: assetsRootContents.path) {
+    let now = Date()
+    try? FileManager.default.setAttributes(
+        [.modificationDate: now, .creationDate: now],
+        ofItemAtPath: assetsRootContents.path
+    )
+    print("  ✅ Touched Assets.xcassets/Contents.json (forces Xcode actool refresh)")
+}
 
 print("\n✅ Icon generation complete!")
 print("   Design: K 🔒 V — navy-blue padlock with tall shackle, golden keyhole glow")

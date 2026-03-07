@@ -703,7 +703,7 @@ final class AppViewModel: ObservableObject {
             showStatusMessage("正在粘贴到「\(targetName)」…")
 
             // 6. Paste on a background thread
-            nonisolated(unsafe) let clipSvc = self.clipboardService
+            let clipSvc = self.clipboardService
             let storageSvc = self.storageService
             let entryTitle = entry.title
 
@@ -811,7 +811,7 @@ final class AppViewModel: ObservableObject {
             showStatusMessage("正在键入到「\(targetName)」…（\(plainText.count) 字符）")
 
             // 6. Type on a background thread
-            nonisolated(unsafe) let clipSvc = self.clipboardService
+            let clipSvc = self.clipboardService
             let storageSvc = self.storageService
             let entryTitle = entry.title
 

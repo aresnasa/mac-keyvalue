@@ -158,11 +158,16 @@ struct MacKeyValueApp: App {
         }
 
         // Menu Bar Extra (status bar icon)
+        // Use "lock.fill" — a filled padlock that clearly conveys
+        // "secure clipboard / key-value store" in the compact menu-bar space.
+        // SF Symbol "key.viewfinder" was generic; "lock.fill" matches the
+        // app's padlock branding and is immediately recognisable.
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(viewModel)
         } label: {
-            Image(systemName: "key.viewfinder")
+            Image(systemName: "lock.fill")
+                .symbolRenderingMode(.hierarchical)
         }
         .menuBarExtraStyle(.menu)
     }
@@ -450,18 +455,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? ProcessInfo.processInfo.arguments.first ?? ""
         let execDir = URL(fileURLWithPath: execPath).deletingLastPathComponent()
 
+        // Single source of truth for icons:
+        //   MacKeyValue/Resources/AppIcon.icns            ← preferred (all sizes)
+        //   MacKeyValue/Resources/Assets.xcassets/        ← PNG fallback
+        //       AppIcon.appiconset/icon_512x512@2x.png
+        //
+        // The old duplicate AppIcon.appiconset/ directory has been removed;
+        // only Assets.xcassets/AppIcon.appiconset/ is tracked in git.
         let candidatePaths: [String] = [
-            // .build/debug/ or .build/release/ → ../../Resources/
+            // .build/debug/ or .build/release/ → ../../Resources/AppIcon.icns
             execDir.appendingPathComponent("../../Resources/AppIcon.icns").path,
             execDir.appendingPathComponent("../../../Resources/AppIcon.icns").path,
             execDir.appendingPathComponent("../../MacKeyValue/Resources/AppIcon.icns").path,
-            // Relative to CWD
+            // Relative to CWD (when launched from project root)
             "MacKeyValue/Resources/AppIcon.icns",
             "Resources/AppIcon.icns",
-            // PNG fallback
-            execDir.appendingPathComponent("../../Resources/AppIcon.appiconset/icon_512x512@2x.png").path,
-            "MacKeyValue/Resources/AppIcon.appiconset/icon_512x512@2x.png",
-            "Resources/AppIcon.appiconset/icon_512x512@2x.png",
+            // PNG fallback — single canonical location (xcassets)
+            execDir.appendingPathComponent("../../Resources/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png").path,
+            execDir.appendingPathComponent("../../MacKeyValue/Resources/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png").path,
+            "MacKeyValue/Resources/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png",
+            "Resources/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png",
         ]
 
         for path in candidatePaths {

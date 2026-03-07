@@ -43,7 +43,7 @@ struct ClipboardChangeInfo {
 /// The service polls the system pasteboard at a configurable interval. When new
 /// content is detected it publishes the change through a Combine subject and
 /// optionally records the item in `StorageService`.
-final class ClipboardService: ObservableObject {
+final class ClipboardService: ObservableObject, @unchecked Sendable {
 
     // MARK: - Singleton
 
