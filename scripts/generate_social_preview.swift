@@ -59,22 +59,23 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     let goldBright  = CGColor(red: 1.00, green: 0.90, blue: 0.45, alpha: 1.0)
 
     // ── Lock geometry ──
-    let lockTotalH  = s * 0.30
+    let lockTotalH  = s * 0.36
     let lockBodyW   = s * 0.18
-    let lockBodyH   = lockTotalH * 0.55
+    let lockBodyH   = lockTotalH * 0.48
     let lockBodyR   = lockBodyW * 0.14
 
-    let lockBodyBotY = cy - lockTotalH * 0.45
+    let lockBodyBotY = cy - lockTotalH * 0.40
     let lockBodyTopY = lockBodyBotY + lockBodyH
     let lockBodyCY   = (lockBodyBotY + lockBodyTopY) / 2
 
-    // Shackle
-    let shackleBarW   = s * 0.020
-    let shackleInnerW = lockBodyW * 0.65
+    // Shackle — taller with straight vertical bars + semicircular arc
+    let shackleBarW   = s * 0.024
+    let shackleInnerW = lockBodyW * 0.55
     let shackleOuterW = shackleInnerW + shackleBarW * 2
     let shackleOuterR = shackleOuterW / 2
     let shackleInnerR = shackleInnerW / 2
-    let shackleArcCY  = lockBodyTopY
+    let shackleStraightH = lockTotalH * 0.18
+    let shackleArcCY  = lockBodyTopY + shackleStraightH
 
     let barLOuterX = cx - shackleOuterW / 2
     let barLInnerX = cx - shackleInnerW / 2

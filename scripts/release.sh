@@ -130,12 +130,12 @@ if [ -z "$VERSION" ]; then
 fi
 
 # Validate semantic version format
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+if ! echo "$VERSION" | grep -qE -e '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
     fail "Invalid version format: '$VERSION' (expected: MAJOR.MINOR.PATCH[-prerelease])"
 fi
 
 # Detect pre-release
-if echo "$VERSION" | grep -qE '-(alpha|beta|rc|dev)'; then
+if echo "$VERSION" | grep -qE -e '-(alpha|beta|rc|dev)'; then
     PRERELEASE=true
 fi
 
@@ -251,6 +251,7 @@ else
 fi
 
 # Read SHA256
+SHA256=""
 if [ -f "$SHA_PATH" ]; then
     SHA256="$(cat "$SHA_PATH" | awk '{print $1}')"
 else
