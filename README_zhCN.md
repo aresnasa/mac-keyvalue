@@ -244,7 +244,17 @@ open Package.swift
 - ⭐ 在 GitHub 上 **Star** 本项目
 - 🐛 提交 [Issue](https://github.com/aresnasa/mac-keyvalue/issues) 反馈问题或建议
 - 🔀 提交 [Pull Request](https://github.com/aresnasa/mac-keyvalue/pulls) 参与开发
-- ☕ 在应用内 **关于 → 请喝咖啡** 扫码赞赏
+- ☕ 扫码赞赏，支持项目持续开发
+
+### 赞赏码
+
+<p align="center">
+  <img src="docs/donate_wechat.png" width="180" alt="微信赞赏码" />
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/donate_alipay.png" width="180" alt="支付宝收款码" />
+  <br/>
+  <sub>微信扫码赞赏 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 支付宝扫码转账</sub>
+</p>
 
 > 你的每一个 Star ⭐ 和反馈都是持续开发的动力！
 

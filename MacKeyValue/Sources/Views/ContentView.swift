@@ -1731,7 +1731,7 @@ struct AboutSheet: View {
         }
         .padding(.horizontal, 32)
         .padding(.vertical, 20)
-        .frame(width: 460, height: showDonate ? 600 : 540)
+        .frame(width: 480, height: showDonate ? 560 : 540)
         .animation(.easeInOut(duration: 0.3), value: showDonate)
     }
 
@@ -1927,7 +1927,7 @@ struct AboutSheet: View {
     // MARK: - Donate View
 
     private var donateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack(spacing: 6) {
                 Text("☕")
                     .font(.title2)
@@ -1940,11 +1940,21 @@ struct AboutSheet: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            // QR Code placeholder — generates a simple QR pattern
-            // Replace with actual WeChat/Alipay QR image when available
-            donateQRPlaceholder
+            // ── Two QR codes side by side ─────────────────────────────
+            HStack(spacing: 24) {
+                donateQRCard(
+                    named: "donate_wechat",
+                    label: "微信",
+                    accentColor: Color(red: 0.07, green: 0.75, blue: 0.24)
+                )
+                donateQRCard(
+                    named: "donate_alipay",
+                    label: "支付宝",
+                    accentColor: Color(red: 0.02, green: 0.56, blue: 0.98)
+                )
+            }
 
-            Text("微信 / 支付宝 扫码赞赏")
+            Text("扫码即可赞赏，感谢支持！")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
 
@@ -1964,54 +1974,77 @@ struct AboutSheet: View {
     /// Generates a visual placeholder for the donate QR code.
     /// Replace the `qrImage` logic below with an actual QR code image
     /// by adding a `donate_qr.png` to the Resources folder.
-    private var donateQRPlaceholder: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.white)
-                .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
-                .frame(width: 160, height: 160)
+    /// Renders a single QR code card for the given resource name.
+    /// - `named`: bare filename without extension, e.g. `"donate_wechat"`
+    /// - `label`: human-readable label shown below the card
+    /// - `accentColor`: border / label accent colour
+    private func donateQRCard(named: String, label: String, accentColor: Color) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(accentColor.opacity(0.25), lineWidth: 1.5)
+                    )
+                    .frame(width: 150, height: 150)
 
-            // Try loading actual QR image from bundle
-            if let qrImage = loadQRImage() {
-                Image(nsImage: qrImage)
-                    .resizable()
-                    .interpolation(.none)
-                    .scaledToFit()
-                    .frame(width: 140, height: 140)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            } else {
-                // Placeholder when no QR image exists yet
-                VStack(spacing: 8) {
-                    Image(systemName: "qrcode")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.quaternary)
-                    Text("请将赞赏码\n添加到 Resources")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
+                if let qrImage = loadQRImage(named: named) {
+                    Image(nsImage: qrImage)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFit()
+                        .frame(width: 130, height: 130)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    VStack(spacing: 6) {
+                        Image(systemName: "qrcode")
+                            .font(.system(size: 40))
+                            .foregroundStyle(accentColor.opacity(0.35))
+                        Text("待添加\n\(named).png")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
+            }
+
+            // Label pill
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(accentColor)
+                    .frame(width: 6, height: 6)
+                Text(label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    /// Attempts to load a QR code image from the app bundle.
-    /// Place your WeChat/Alipay QR code as `donate_qr.png` in Resources/.
-    private func loadQRImage() -> NSImage? {
-        // Try bundle resource first
-        if let url = Bundle.main.url(forResource: "donate_qr", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            return image
+    /// Attempts to load a QR code image from the app bundle by resource name.
+    ///
+    /// **Placement**: add the PNG files to `MacKeyValue/Resources/`:
+    /// - `donate_wechat.png`  — WeChat Pay QR code
+    /// - `donate_alipay.png`  — Alipay QR code
+    ///
+    /// The build script (build.sh) copies `Resources/` into the .app bundle,
+    /// so placing the files there is sufficient for both dev and release builds.
+    private func loadQRImage(named resourceName: String) -> NSImage? {
+        // 1. Bundle resource (release / Xcode build)
+        if let url = Bundle.main.url(forResource: resourceName, withExtension: "png"),
+           let img = NSImage(contentsOf: url) {
+            return img
         }
-        // Try various locations for development builds
-        let candidates = [
-            "donate_qr.png",
-            "Resources/donate_qr.png",
-            "../Resources/donate_qr.png",
+        // 2. Dev-build search paths (swift run / bare executable)
+        let candidates: [String] = [
+            resourceName + ".png",
+            "Resources/" + resourceName + ".png",
+            "../Resources/" + resourceName + ".png",
+            "MacKeyValue/Resources/" + resourceName + ".png",
         ]
         for path in candidates {
-            if let image = NSImage(contentsOfFile: path) {
-                return image
-            }
+            if let img = NSImage(contentsOfFile: path) { return img }
         }
         return nil
     }

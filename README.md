@@ -292,7 +292,17 @@ If KeyValue is useful to you:
 - ⭐ **Star** this project on GitHub
 - 🐛 File an [Issue](https://github.com/aresnasa/mac-keyvalue/issues) for bugs or feature requests
 - 🔀 Submit a [Pull Request](https://github.com/aresnasa/mac-keyvalue/pulls)
-- ☕ Buy me a coffee via **About → Donate** in the app
+- ☕ Buy me a coffee by scanning a QR code below
+
+### Donate / 赞赏
+
+<p align="center">
+  <img src="docs/donate_wechat.png" width="180" alt="微信赞赏码" />
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/donate_alipay.png" width="180" alt="支付宝收款码" />
+  <br/>
+  <sub>微信扫码赞赏 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 支付宝扫码转账</sub>
+</p>
 
 > Every Star ⭐ and piece of feedback keeps development going!
 
