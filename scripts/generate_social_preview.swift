@@ -137,7 +137,7 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
                         radius: (shackleOuterR + shackleInnerR) / 2,
                         startAngle: .pi * 0.80, endAngle: .pi * 0.20,
                         clockwise: false)
-    ctx.setStrokeColor(CGColor(red: 0.75, green: 0.82, blue: 0.92, alpha: 0.55))
+    ctx.setStrokeColor(CGColor(red: 1.00, green: 0.92, blue: 0.60, alpha: 0.55))
     ctx.setLineWidth(shackleBarW * 0.50)
     ctx.setLineCap(.butt)
     ctx.addPath(shackleHlArc)
@@ -147,7 +147,7 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     // Shackle border
     ctx.saveGState()
     ctx.addPath(shackleFill)
-    ctx.setStrokeColor(CGColor(red: 0.10, green: 0.16, blue: 0.30, alpha: 0.25))
+    ctx.setStrokeColor(CGColor(red: 0.35, green: 0.25, blue: 0.05, alpha: 0.35))
     ctx.setLineWidth(s * 0.002)
     ctx.strokePath()
     ctx.restoreGState()
@@ -179,8 +179,8 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     ctx.clip()
     let topHlGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                colors: [
-                                   CGColor(red: 1, green: 1, blue: 1, alpha: 0.28),
-                                   CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
+                                   CGColor(red: 1.00, green: 0.95, blue: 0.75, alpha: 0.35),
+                                   CGColor(red: 1.00, green: 0.92, blue: 0.65, alpha: 0.0),
                                ] as CFArray, locations: [0.0, 1.0])!
     ctx.drawLinearGradient(topHlGrad,
                            start: CGPoint(x: cx, y: lockBodyTopY),
@@ -196,9 +196,9 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     let specW = lockBodyW * 0.12
     let specGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                               colors: [
-                                  CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
-                                  CGColor(red: 1, green: 1, blue: 1, alpha: 0.15),
-                                  CGColor(red: 1, green: 1, blue: 1, alpha: 0.0),
+                                  CGColor(red: 1.00, green: 0.95, blue: 0.70, alpha: 0.0),
+                                  CGColor(red: 1.00, green: 0.95, blue: 0.70, alpha: 0.20),
+                                  CGColor(red: 1.00, green: 0.95, blue: 0.70, alpha: 0.0),
                               ] as CFArray, locations: [0.0, 0.5, 1.0])!
     ctx.drawLinearGradient(specGrad,
                            start: CGPoint(x: specX, y: lockBodyCY),
@@ -209,7 +209,7 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     // Body border
     ctx.saveGState()
     ctx.addPath(lbPath)
-    ctx.setStrokeColor(CGColor(red: 0.10, green: 0.16, blue: 0.28, alpha: 0.30))
+    ctx.setStrokeColor(CGColor(red: 0.35, green: 0.25, blue: 0.05, alpha: 0.35))
     ctx.setLineWidth(s * 0.0025)
     ctx.strokePath()
     ctx.restoreGState()
@@ -219,7 +219,7 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
     ctx.saveGState()
     ctx.move(to: CGPoint(x: cx - lockBodyW * 0.42, y: divY))
     ctx.addLine(to: CGPoint(x: cx + lockBodyW * 0.42, y: divY))
-    ctx.setStrokeColor(CGColor(red: 0.08, green: 0.14, blue: 0.28, alpha: 0.20))
+    ctx.setStrokeColor(CGColor(red: 0.35, green: 0.25, blue: 0.05, alpha: 0.25))
     ctx.setLineWidth(s * 0.002)
     ctx.strokePath()
     ctx.restoreGState()
@@ -346,8 +346,8 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
         ctx.saveGState()
         let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                            colors: [
-                               CGColor(red: 0.55, green: 0.60, blue: 0.72, alpha: 0.0),
-                               CGColor(red: 0.55, green: 0.60, blue: 0.72, alpha: 0.30),
+                               CGColor(red: 0.72, green: 0.58, blue: 0.22, alpha: 0.0),
+                               CGColor(red: 0.72, green: 0.58, blue: 0.22, alpha: 0.30),
                            ] as CFArray, locations: [0.0, 1.0])!
         ctx.addPath(roundedRectPath(rect, radius: connH / 2))
         ctx.clip()
@@ -366,8 +366,8 @@ func drawKLockV(ctx: CGContext, cx: CGFloat, cy: CGFloat, scale s: CGFloat) {
         ctx.saveGState()
         let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                            colors: [
-                               CGColor(red: 0.55, green: 0.60, blue: 0.72, alpha: 0.30),
-                               CGColor(red: 0.55, green: 0.60, blue: 0.72, alpha: 0.0),
+                               CGColor(red: 0.72, green: 0.58, blue: 0.22, alpha: 0.30),
+                               CGColor(red: 0.72, green: 0.58, blue: 0.22, alpha: 0.0),
                            ] as CFArray, locations: [0.0, 1.0])!
         ctx.addPath(roundedRectPath(rect, radius: connH / 2))
         ctx.clip()
@@ -448,8 +448,8 @@ ctx.restoreGState()
 // Subtle radial glow behind the icon area
 let glowGrad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                           colors: [
-                              CGColor(red: 0.18, green: 0.22, blue: 0.38, alpha: 0.30),
-                              CGColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 0.0),
+                              CGColor(red: 0.30, green: 0.24, blue: 0.10, alpha: 0.30),
+                              CGColor(red: 0.12, green: 0.10, blue: 0.06, alpha: 0.0),
                           ] as CFArray,
                           locations: [0.0, 1.0])!
 
