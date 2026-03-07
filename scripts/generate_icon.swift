@@ -183,24 +183,24 @@ func drawIcon(size pixelSize: Int) -> NSImage {
     // Left outer edge, going up
     shackleFill.move(to: CGPoint(x: barLOuterX, y: barBotY))
     shackleFill.addLine(to: CGPoint(x: barLOuterX, y: shackleArcCY))
-    // Outer arc left → right (counter-clockwise in screen coords = clockwise in CG)
+    // Outer arc left → right (going over the top; clockwise=true in flipped AppKit context)
     shackleFill.addArc(center: CGPoint(x: centerX, y: shackleArcCY),
                        radius: shackleOuterR,
                        startAngle: .pi,
                        endAngle: 0,
-                       clockwise: false)
+                       clockwise: true)
     // Right outer edge, going down
     shackleFill.addLine(to: CGPoint(x: barROuterX, y: barBotY))
     // Across bottom of right bar
     shackleFill.addLine(to: CGPoint(x: barRInnerX, y: barBotY))
     // Right inner edge, going up
     shackleFill.addLine(to: CGPoint(x: barRInnerX, y: shackleArcCY))
-    // Inner arc right → left (reversed)
+    // Inner arc right → left (reversed, going over the top)
     shackleFill.addArc(center: CGPoint(x: centerX, y: shackleArcCY),
                        radius: shackleInnerR,
                        startAngle: 0,
                        endAngle: .pi,
-                       clockwise: true)
+                       clockwise: false)
     // Left inner edge, going down
     shackleFill.addLine(to: CGPoint(x: barLInnerX, y: barBotY))
     shackleFill.closeSubpath()
@@ -230,7 +230,7 @@ func drawIcon(size pixelSize: Int) -> NSImage {
                         radius: (shackleOuterR + shackleInnerR) / 2,
                         startAngle: .pi * 0.80,
                         endAngle: .pi * 0.20,
-                        clockwise: false)
+                        clockwise: true)
     ctx.setStrokeColor(CGColor(red: 1.00, green: 0.94, blue: 0.70, alpha: 0.60))
     ctx.setLineWidth(shackleBarW * 0.50)
     ctx.setLineCap(.butt)
