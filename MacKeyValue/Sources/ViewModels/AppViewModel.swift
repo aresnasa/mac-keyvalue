@@ -280,8 +280,17 @@ final class AppViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // 1. Ensure encryption master key exists
-            let isNewKey = try encryptionService.ensureMasterKeyExists()
+            // 1. Ensure encryption master key exists.
+            //    Retry once after a short delay if the Keychain is temporarily
+            //    unavailable (e.g. right after login, before the keychain is unlocked).
+            let isNewKey: Bool
+            do {
+                isNewKey = try encryptionService.ensureMasterKeyExists()
+            } catch EncryptionError.keychainReadFailed {
+                print("[AppViewModel] Keychain 暂时不可用，2秒后重试…")
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                isNewKey = try encryptionService.ensureMasterKeyExists()
+            }
             if isNewKey {
                 appState = .onboarding
             } else {

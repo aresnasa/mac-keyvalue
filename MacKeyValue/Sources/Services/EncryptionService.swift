@@ -130,6 +130,11 @@ final class EncryptionService {
         } catch let error as EncryptionError {
             throw error
         } catch {
+            if isAuthenticationFailure(error) {
+                throw EncryptionError.decryptionFailed(
+                    "主密钥不匹配 — 该条目可能来自其他设备或 Keychain 已重置，请重新设置该条目的值"
+                )
+            }
             throw EncryptionError.decryptionFailed(error.localizedDescription)
         }
     }
@@ -171,6 +176,11 @@ final class EncryptionService {
         } catch let error as EncryptionError {
             throw error
         } catch {
+            if isAuthenticationFailure(error) {
+                throw EncryptionError.decryptionFailed(
+                    "密码不正确或数据已损坏，请检查密码后重试"
+                )
+            }
             throw EncryptionError.decryptionFailed(error.localizedDescription)
         }
     }
@@ -178,17 +188,31 @@ final class EncryptionService {
     // MARK: - Public API – Key Management
 
     /// Ensures a master key exists in the Keychain; generates one if absent.
+    ///
+    /// **IMPORTANT**: Only creates a new key when the Keychain explicitly reports
+    /// "item not found".  Any other Keychain error (locked, permission denied,
+    /// interaction not allowed, etc.) is propagated so that the caller can
+    /// surface it to the user instead of silently overwriting an existing key.
     @discardableResult
     func ensureMasterKeyExists() throws -> Bool {
-        if (try? getMasterKey()) != nil {
+        do {
+            _ = try getMasterKey()
             return false // key already existed
+        } catch EncryptionError.masterKeyNotFound {
+            // Key genuinely does not exist — safe to create a new one.
+            print("[EncryptionService] 未找到主密钥，正在生成新密钥…")
+            let key = SymmetricKey(size: .bits256)
+            try saveMasterKeyToKeychain(key)
+            queue.sync(flags: .barrier) {
+                cachedMasterKey = key
+            }
+            return true // new key was created
+        } catch {
+            // Any other error (keychain locked, permission denied, etc.)
+            // must NOT be swallowed — propagate it so the UI can handle it.
+            print("[EncryptionService] ⚠️ 读取主密钥失败（非「未找到」错误）: \(error.localizedDescription)")
+            throw error
         }
-        let key = SymmetricKey(size: .bits256)
-        try saveMasterKeyToKeychain(key)
-        queue.sync(flags: .barrier) {
-            cachedMasterKey = key
-        }
-        return true // new key was created
     }
 
     /// Re-encrypts all provided entries' values from an old master key to a new one.
@@ -212,7 +236,7 @@ final class EncryptionService {
 
         // Persist the new master key
         try deleteMasterKeyFromKeychain()
-        try saveMasterKeyToKeychain(newKey)
+        try saveMasterKeyToKeychain(newKey, allowOverwrite: true)
         queue.sync(flags: .barrier) {
             cachedMasterKey = newKey
         }
@@ -253,7 +277,7 @@ final class EncryptionService {
 
     // MARK: - Keychain Operations
 
-    private func saveMasterKeyToKeychain(_ key: SymmetricKey) throws {
+    private func saveMasterKeyToKeychain(_ key: SymmetricKey, allowOverwrite: Bool = false) throws {
         let keyData = key.withUnsafeBytes { Data($0) }
 
         let query: [String: Any] = [
@@ -267,7 +291,18 @@ final class EncryptionService {
 
         let status = SecItemAdd(query as CFDictionary, nil)
         if status == errSecDuplicateItem {
-            // Key already exists – update it
+            guard allowOverwrite else {
+                // Safety: refuse to overwrite an existing key unless explicitly requested
+                // (e.g. during key rotation). This prevents silent key loss when
+                // ensureMasterKeyExists() is called with a transient Keychain error.
+                print("[EncryptionService] ⚠️ Keychain 中已存在主密钥，拒绝覆盖（allowOverwrite=false）")
+                // Read and use the existing key instead of overwriting.
+                let existingData = try readMasterKeyFromKeychain()
+                queue.sync(flags: .barrier) {
+                    cachedMasterKey = SymmetricKey(data: existingData)
+                }
+                return
+            }
             let searchQuery: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: Constants.keychainService,
@@ -341,6 +376,17 @@ final class EncryptionService {
         var bytes = [UInt8](repeating: 0, count: count)
         _ = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
         return Data(bytes)
+    }
+
+    // MARK: - Error Helpers
+
+    /// Detects CryptoKit authentication failure (GCM tag mismatch) without
+    /// requiring macOS 14.4+ for `CryptoKitError` `Equatable` conformance.
+    private func isAuthenticationFailure(_ error: Error) -> Bool {
+        let desc = String(describing: error)
+        return desc.contains("authenticationFailure")
+            || desc.contains("CryptoKitError 错误 3")
+            || desc.contains("CryptoKitError error 3")
     }
 }
 
