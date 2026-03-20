@@ -353,8 +353,17 @@ fi
 info "Using entitlements: $ACTIVE_ENTITLEMENTS"
 
 # Sign nested bundles first
+# NOTE: .bundle directories that lack Info.plist are SPM resource bundles
+# (e.g. swift-crypto_Crypto.bundle containing only PrivacyInfo.xcprivacy).
+# codesign rejects these with "bundle format unrecognized, invalid, or
+# unsuitable", so we skip them.
 NESTED_COUNT=0
 while IFS= read -r -d '' nested; do
+    # Skip .bundle dirs that aren't real signable macOS bundles
+    if [[ "$nested" == *.bundle ]] && [ ! -f "$nested/Info.plist" ]; then
+        info "Skipping non-signable bundle: $(basename "$nested")"
+        continue
+    fi
     if [ "$SIGN_ID" = "-" ]; then
         codesign --force --sign "$SIGN_ID" \
             --timestamp=none \

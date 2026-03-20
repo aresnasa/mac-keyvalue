@@ -523,7 +523,7 @@ final class UpdateService: ObservableObject {
         if let enumerator = fm.enumerator(atPath: appURL.path) {
             while let relativePath = enumerator.nextObject() as? String {
                 let ext = (relativePath as NSString).pathExtension
-                if ext == "framework" || ext == "dylib" || ext == "bundle" {
+                if ext == "framework" || ext == "dylib" {
                     let fullPath = appURL.appendingPathComponent(relativePath).path
                     runProcess(
                         "/usr/bin/codesign",
@@ -532,6 +532,27 @@ final class UpdateService: ObservableObject {
                             "--timestamp=none",
                             fullPath,
                         ])
+                } else if ext == "bundle" {
+                    // Only sign .bundle directories that are real signable
+                    // macOS bundles (contain Info.plist or a Mach-O binary).
+                    // SPM resource bundles like swift-crypto_Crypto.bundle
+                    // only contain PrivacyInfo.xcprivacy and codesign rejects
+                    // them with "bundle format unrecognized, invalid, or
+                    // unsuitable".
+                    let bundleURL = appURL.appendingPathComponent(relativePath)
+                    let hasInfoPlist = fm.fileExists(
+                        atPath: bundleURL.appendingPathComponent("Info.plist").path)
+                    let hasCodeSignature = fm.fileExists(
+                        atPath: bundleURL.appendingPathComponent("_CodeSignature").path)
+                    if hasInfoPlist || hasCodeSignature {
+                        runProcess(
+                            "/usr/bin/codesign",
+                            args: [
+                                "--force", "--sign", "-",
+                                "--timestamp=none",
+                                bundleURL.path,
+                            ])
+                    }
                 }
             }
         }

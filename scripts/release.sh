@@ -463,8 +463,17 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
                    args: [\"-cr\", \"#{appdir}/${APP_NAME}.app\"],
                    sudo: false
 
-    # 2. Re-sign nested frameworks / dylibs with ad-hoc identity
-    Dir.glob(\"#{appdir}/${APP_NAME}.app/Contents/**/*.{framework,dylib,bundle}\").each do |nested|
+    # 2. Re-sign nested frameworks / dylibs with ad-hoc identity.
+    #    Skip .bundle dirs that are NOT real signable bundles (e.g.
+    #    swift-crypto_Crypto.bundle only contains PrivacyInfo.xcprivacy
+    #    and codesign rejects it with \"bundle format unrecognized\").
+    Dir.glob(\"#{appdir}/${APP_NAME}.app/Contents/**/*.{framework,dylib}\").each do |nested|
+      system_command \"/usr/bin/codesign\",
+                     args: [\"--force\", \"--sign\", \"-\", \"--timestamp=none\", nested],
+                     sudo: false
+    end
+    Dir.glob(\"#{appdir}/${APP_NAME}.app/Contents/**/*.bundle\").each do |nested|
+      next unless File.exist?(File.join(nested, \"Info.plist\"))
       system_command \"/usr/bin/codesign\",
                      args: [\"--force\", \"--sign\", \"-\", \"--timestamp=none\", nested],
                      sudo: false
