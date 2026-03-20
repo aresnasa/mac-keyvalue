@@ -259,7 +259,7 @@ else
     success "DMG verified"
 fi
 
-# Read SHA256
+# Read SHA256 (preliminary — will be re-verified after GitHub upload)
 SHA256=""
 if [ -f "$SHA_PATH" ]; then
     SHA256="$(cat "$SHA_PATH" | awk '{print $1}')"
@@ -270,7 +270,7 @@ else
         SHA256="<will-be-computed-after-build>"
     fi
 fi
-info "SHA256: $SHA256"
+info "SHA256 (local): $SHA256"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  STEP 2: Create git tag
@@ -416,20 +416,54 @@ fi
 if ! $SKIP_BREW && ! $PRERELEASE; then
     step "Updating Homebrew formula"
 
-    # Compute SHA256 for both architectures (if both DMGs exist).
-    # The current build only produces the local arch, so we use the same
-    # SHA for the "other" arch and expect the release to be updated with
-    # a second DMG built on the other architecture (CI or manual).
-    ARM_DMG="${DIST_DIR}/${APP_NAME}-${VERSION}-apple-silicon.dmg"
-    INTEL_DMG="${DIST_DIR}/${APP_NAME}-${VERSION}-intel.dmg"
+    # ── Re-verify SHA256 by downloading the DMG back from GitHub Release ──
+    # This guarantees the SHA in the Cask formula matches what Homebrew will
+    # actually download, eliminating SHA-256 mismatch errors.
+    DOWNLOAD_URL_ARM="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${TAG}/${APP_NAME}-${VERSION}-apple-silicon.dmg"
+    DOWNLOAD_URL_INTEL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${TAG}/${APP_NAME}-${VERSION}-intel.dmg"
 
-    SHA256_ARM="$SHA256"
-    SHA256_INTEL="$SHA256"
-    if [ -f "$ARM_DMG" ]; then
-        SHA256_ARM="$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')"
-    fi
-    if [ -f "$INTEL_DMG" ]; then
-        SHA256_INTEL="$(shasum -a 256 "$INTEL_DMG" | awk '{print $1}')"
+    SHA256_ARM=""
+    SHA256_INTEL=""
+
+    if ! $DRY_RUN; then
+        VERIFY_TMPDIR="$(mktemp -d)"
+
+        info "Downloading DMG from GitHub to verify SHA256…"
+
+        # Download and hash the ARM DMG
+        VERIFY_ARM_FILE="${VERIFY_TMPDIR}/arm.dmg"
+        if curl -fsSL -o "$VERIFY_ARM_FILE" "$DOWNLOAD_URL_ARM" 2>/dev/null; then
+            SHA256_ARM="$(shasum -a 256 "$VERIFY_ARM_FILE" | awk '{print $1}')"
+            info "SHA256 (arm64, verified): $SHA256_ARM"
+        else
+            warn "ARM DMG not found on GitHub Release, using local SHA"
+            ARM_DMG="${DIST_DIR}/${APP_NAME}-${VERSION}-apple-silicon.dmg"
+            if [ -f "$ARM_DMG" ]; then
+                SHA256_ARM="$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')"
+            else
+                SHA256_ARM="$SHA256"
+            fi
+        fi
+
+        # Download and hash the Intel DMG
+        VERIFY_INTEL_FILE="${VERIFY_TMPDIR}/intel.dmg"
+        if curl -fsSL -o "$VERIFY_INTEL_FILE" "$DOWNLOAD_URL_INTEL" 2>/dev/null; then
+            SHA256_INTEL="$(shasum -a 256 "$VERIFY_INTEL_FILE" | awk '{print $1}')"
+            info "SHA256 (x86_64, verified): $SHA256_INTEL"
+        else
+            warn "Intel DMG not found on GitHub Release, using local SHA"
+            INTEL_DMG="${DIST_DIR}/${APP_NAME}-${VERSION}-intel.dmg"
+            if [ -f "$INTEL_DMG" ]; then
+                SHA256_INTEL="$(shasum -a 256 "$INTEL_DMG" | awk '{print $1}')"
+            else
+                SHA256_INTEL="$SHA256"
+            fi
+        fi
+
+        rm -rf "$VERIFY_TMPDIR"
+    else
+        SHA256_ARM="<will-be-verified-after-upload>"
+        SHA256_INTEL="<will-be-verified-after-upload>"
     fi
 
     CASK_CONTENT="cask \"keyvalue\" do
@@ -485,7 +519,7 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
     #    /Applications.  Without re-signing, macOS 14+ / Sequoia / Tahoe
     #    will block the app with \"Apple cannot verify\".
     ent = \"#{appdir}/${APP_NAME}.app/Contents/Resources/MacKeyValue-adhoc.entitlements\"
-    codesign_args = [\"--force\", \"--sign\", \"-\", \"--timestamp=none\", \"--deep\"]
+    codesign_args = [\"--force\", \"--sign\", \"-\", \"--timestamp=none\"]
     codesign_args += [\"--entitlements\", ent] if File.exist?(ent)
     codesign_args << \"#{appdir}/${APP_NAME}.app\"
     system_command \"/usr/bin/codesign\",
@@ -514,7 +548,7 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
 
     If macOS blocks the app after install or upgrade, run:
       xattr -cr /Applications/${APP_NAME}.app
-      codesign --force --sign - --timestamp=none --deep /Applications/${APP_NAME}.app
+      codesign --force --sign - --timestamp=none /Applications/${APP_NAME}.app
   EOS
 end
 "

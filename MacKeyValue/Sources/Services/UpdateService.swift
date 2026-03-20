@@ -567,7 +567,7 @@ final class UpdateService: ObservableObject {
         ]
         let entitlementsPath = entitlementsCandidates.first { fm.fileExists(atPath: $0.path) }
 
-        var args = ["--force", "--sign", "-", "--timestamp=none", "--deep"]
+        var args = ["--force", "--sign", "-", "--timestamp=none"]
         if let ent = entitlementsPath {
             args.insert(contentsOf: ["--entitlements", ent.path], at: args.count - 1)
         }
