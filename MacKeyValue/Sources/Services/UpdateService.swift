@@ -5,32 +5,32 @@ import Foundation
 // MARK: - GitHub API Models
 
 private struct GitHubRelease: Decodable {
-    let tagName:     String
-    let htmlURL:     String
-    let name:        String
-    let body:        String?
+    let tagName: String
+    let htmlURL: String
+    let name: String
+    let body: String?
     let publishedAt: String?
-    let assets:      [GitHubAsset]
+    let assets: [GitHubAsset]
 
     enum CodingKeys: String, CodingKey {
-        case tagName     = "tag_name"
-        case htmlURL     = "html_url"
+        case tagName = "tag_name"
+        case htmlURL = "html_url"
         case name, body, assets
         case publishedAt = "published_at"
     }
 }
 
 private struct GitHubAsset: Decodable {
-    let name:               String
+    let name: String
     let browserDownloadURL: String
-    let size:               Int
-    let contentType:        String
+    let size: Int
+    let contentType: String
 
     enum CodingKeys: String, CodingKey {
         case name
         case browserDownloadURL = "browser_download_url"
         case size
-        case contentType        = "content_type"
+        case contentType = "content_type"
     }
 }
 
@@ -56,18 +56,18 @@ final class UpdateService: ObservableObject {
 
         var displayName: String {
             switch self {
-            case .homebrew:   return "Homebrew"
+            case .homebrew: return "Homebrew"
             case .sourceTree: return "源码构建"
-            case .appBundle:  return "DMG 安装"
-            case .unknown:    return "未知"
+            case .appBundle: return "DMG 安装"
+            case .unknown: return "未知"
             }
         }
         var icon: String {
             switch self {
-            case .homebrew:   return "shippingbox.fill"
+            case .homebrew: return "shippingbox.fill"
             case .sourceTree: return "chevron.left.forwardslash.chevron.right"
-            case .appBundle:  return "arrow.down.app.fill"
-            case .unknown:    return "questionmark.app.fill"
+            case .appBundle: return "arrow.down.app.fill"
+            case .unknown: return "questionmark.app.fill"
             }
         }
         var canAutoUpdate: Bool { true }
@@ -78,9 +78,9 @@ final class UpdateService: ObservableObject {
         case checking
         case upToDate
         case available(version: String, url: String)
-        case downloading(version: String, progress: Double)   // 0.0 … 1.0
+        case downloading(version: String, progress: Double)  // 0.0 … 1.0
         case installing(version: String)
-        case updating                                          // brew / git
+        case updating  // brew / git
         case success(version: String)
         case failed(String)
 
@@ -116,15 +116,15 @@ final class UpdateService: ObservableObject {
 
     // MARK: - Published State
 
-    @Published var state:         UpdateState   = .idle
+    @Published var state: UpdateState = .idle
     @Published var installMethod: InstallMethod = .unknown
-    @Published var lastChecked:   Date?
+    @Published var lastChecked: Date?
 
     // MARK: - Constants
 
     private let repoOwner = "aresnasa"
-    private let repoName  = "mac-keyvalue"
-    private let appName   = "KeyValue"
+    private let repoName = "mac-keyvalue"
+    private let appName = "KeyValue"
     private let checkIntervalSeconds: TimeInterval = 86_400  // 24 h
     private let lastCheckedKey = "com.aresnasa.mackeyvalue.updateLastChecked"
 
@@ -142,7 +142,7 @@ final class UpdateService: ObservableObject {
     // MARK: - Init
 
     private init() {
-        lastChecked   = UserDefaults.standard.object(forKey: lastCheckedKey) as? Date
+        lastChecked = UserDefaults.standard.object(forKey: lastCheckedKey) as? Date
         installMethod = detectInstallMethod()
     }
 
@@ -164,7 +164,7 @@ final class UpdateService: ObservableObject {
         do {
             let release = try await fetchLatestRelease()
             latestRelease = release
-            let latest  = release.tagName.trimmingCharacters(in: .init(charactersIn: "vV"))
+            let latest = release.tagName.trimmingCharacters(in: .init(charactersIn: "vV"))
             saveLastChecked()
             if isNewer(latest, than: currentVersion) {
                 state = .available(version: latest, url: release.htmlURL)
@@ -293,16 +293,17 @@ final class UpdateService: ObservableObject {
         guard let release = latestRelease else { return nil }
         let arch: String = {
             #if arch(arm64)
-            return "apple-silicon"
+                return "apple-silicon"
             #else
-            return "intel"
+                return "intel"
             #endif
         }()
 
         // Prefer the arch-specific DMG; fall back to any .dmg in the release.
         let dmgAssets = release.assets.filter { $0.name.lowercased().hasSuffix(".dmg") }
-        let best = dmgAssets.first(where: { $0.name.contains(arch) })
-                ?? dmgAssets.first
+        let best =
+            dmgAssets.first(where: { $0.name.contains(arch) })
+            ?? dmgAssets.first
         guard let asset = best else { return nil }
         return URL(string: asset.browserDownloadURL)
     }
@@ -377,16 +378,20 @@ final class UpdateService: ObservableObject {
         // returns a plist with mount info.
         let out = try await shell(
             "/usr/bin/hdiutil",
-            args: ["attach", dmgURL.path,
-                   "-nobrowse", "-noverify", "-noautoopen", "-plist"]
+            args: [
+                "attach", dmgURL.path,
+                "-nobrowse", "-noverify", "-noautoopen", "-plist",
+            ]
         )
         // Parse plist to extract mount point
         guard let data = out.data(using: .utf8),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let entities = plist["system-entities"] as? [[String: Any]]
+            let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
+                as? [String: Any],
+            let entities = plist["system-entities"] as? [[String: Any]]
         else {
-            throw NSError(domain: "UpdateService", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "无法解析 hdiutil 输出"])
+            throw NSError(
+                domain: "UpdateService", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "无法解析 hdiutil 输出"])
         }
         // Find the entity with a mount-point key.
         for entity in entities {
@@ -394,17 +399,18 @@ final class UpdateService: ObservableObject {
                 return mp
             }
         }
-        throw NSError(domain: "UpdateService", code: 2,
-                      userInfo: [NSLocalizedDescriptionKey: "DMG 挂载成功但未找到挂载点"])
+        throw NSError(
+            domain: "UpdateService", code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "DMG 挂载成功但未找到挂载点"])
     }
 
     private func unmountDMG(mountPoint: String) {
         // Best-effort; ignore errors.
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        proc.arguments     = ["detach", mountPoint, "-quiet", "-force"]
+        proc.arguments = ["detach", mountPoint, "-quiet", "-force"]
         proc.standardOutput = FileHandle.nullDevice
-        proc.standardError  = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
         try? proc.run()
         proc.waitUntilExit()
     }
@@ -414,9 +420,11 @@ final class UpdateService: ObservableObject {
     /// Finds the first `.app` bundle at the top level of the mount point.
     private func findAppBundle(in mountPoint: String) -> URL? {
         let url = URL(fileURLWithPath: mountPoint)
-        guard let items = try? FileManager.default.contentsOfDirectory(
-            at: url, includingPropertiesForKeys: nil
-        ) else { return nil }
+        guard
+            let items = try? FileManager.default.contentsOfDirectory(
+                at: url, includingPropertiesForKeys: nil
+            )
+        else { return nil }
         return items.first { $0.pathExtension == "app" }
     }
 
@@ -440,8 +448,9 @@ final class UpdateService: ObservableObject {
         // The running app might not end with .app when built via `swift run`.
         // In that case there's nothing to replace.
         guard currentAppURL.pathExtension == "app" else {
-            throw NSError(domain: "UpdateService", code: 3,
-                          userInfo: [NSLocalizedDescriptionKey: "当前进程不是 .app 包，无法自动替换"])
+            throw NSError(
+                domain: "UpdateService", code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "当前进程不是 .app 包，无法自动替换"])
         }
 
         // ── 0. Pre-strip quarantine from the DMG source BEFORE copying ──
@@ -451,7 +460,8 @@ final class UpdateService: ObservableObject {
         stripAllQuarantine(at: newAppURL)
 
         let parentDir = currentAppURL.deletingLastPathComponent()
-        let backupURL = parentDir.appendingPathComponent(".KeyValue-backup-\(UUID().uuidString).app")
+        let backupURL = parentDir.appendingPathComponent(
+            ".KeyValue-backup-\(UUID().uuidString).app")
 
         // 1. Backup current
         try fm.moveItem(at: currentAppURL, to: backupURL)
@@ -515,11 +525,13 @@ final class UpdateService: ObservableObject {
                 let ext = (relativePath as NSString).pathExtension
                 if ext == "framework" || ext == "dylib" || ext == "bundle" {
                     let fullPath = appURL.appendingPathComponent(relativePath).path
-                    runProcess("/usr/bin/codesign", args: [
-                        "--force", "--sign", "-",
-                        "--timestamp=none",
-                        fullPath
-                    ])
+                    runProcess(
+                        "/usr/bin/codesign",
+                        args: [
+                            "--force", "--sign", "-",
+                            "--timestamp=none",
+                            fullPath,
+                        ])
                 }
             }
         }
@@ -546,10 +558,10 @@ final class UpdateService: ObservableObject {
     @discardableResult
     private func runProcess(_ executablePath: String, args: [String]) -> Int32 {
         let proc = Process()
-        proc.executableURL  = URL(fileURLWithPath: executablePath)
-        proc.arguments      = args
+        proc.executableURL = URL(fileURLWithPath: executablePath)
+        proc.arguments = args
         proc.standardOutput = FileHandle.nullDevice
-        proc.standardError  = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
         do {
             try proc.run()
             proc.waitUntilExit()
@@ -562,24 +574,76 @@ final class UpdateService: ObservableObject {
 
     // MARK: - Homebrew Update
 
+    /// Full Homebrew upgrade flow:
+    ///   1. `brew update` — refresh all taps (including aresnasa/tap) so
+    ///      Homebrew sees the latest Cask version.
+    ///   2. `brew upgrade --cask keyvalue` — download & install the new DMG.
+    ///   3. Strip quarantine + re-sign ad-hoc — same post-install hardening
+    ///      that the DMG auto-update path uses, because the Cask `postflight`
+    ///      only does `xattr -cr` which is not always sufficient on macOS 14+.
+    ///   4. Relaunch via direct binary execution (bypasses Gatekeeper).
     @MainActor
     private func upgradeViaBrew(brewPath: String, expectedVersion: String) async {
         state = .updating
         guard let brew = resolvedBrewPath(hint: brewPath) else {
-            state = .failed("未找到 brew。\n请手动运行：brew upgrade --cask keyvalue")
+            state = .failed("未找到 brew。\n请手动运行：\nbrew update && brew upgrade --cask keyvalue")
             return
         }
+
+        // ── 1. Refresh taps so Homebrew knows about the new version ──────
         do {
-            let out = try await shell(brew, args: ["upgrade", "--cask", "keyvalue"])
-            print("[UpdateService] brew:\n\(out)")
-            state = .success(version: expectedVersion)
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            relaunchApp()
+            let tapOut = try await shell(brew, args: ["update"])
+            print("[UpdateService] brew update:\n\(tapOut)")
         } catch {
-            let msg = (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
-                      ?? error.localizedDescription
-            state = .failed("brew upgrade 失败：\(msg)\n\n请手动运行：\nbrew upgrade --cask keyvalue")
+            // Non-fatal: `brew update` can fail if network is flaky but the
+            // tap might already be up-to-date locally.
+            print("[UpdateService] brew update warning (continuing): \(error.localizedDescription)")
         }
+
+        // ── 2. Upgrade the cask ──────────────────────────────────────────
+        do {
+            let upgradeOut = try await shell(brew, args: ["upgrade", "--cask", "keyvalue"])
+            print("[UpdateService] brew upgrade:\n\(upgradeOut)")
+        } catch {
+            let msg =
+                (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
+                ?? error.localizedDescription
+            // Check if "already installed" / "already up-to-date"
+            if msg.contains("already installed") || msg.contains("up-to-date") {
+                state = .upToDate
+                return
+            }
+            state = .failed(
+                "brew upgrade 失败：\(msg)\n\n请手动运行：\nbrew update && brew upgrade --cask keyvalue")
+            return
+        }
+
+        // ── 3. Post-install hardening ────────────────────────────────────
+        // Homebrew installs the .app into /Applications (or ~/Applications).
+        // The Cask postflight does `xattr -cr` but does NOT re-sign, which
+        // can still trigger Gatekeeper on macOS 14+ / 26.
+        let installedAppCandidates = [
+            "/Applications/\(appName).app",
+            NSHomeDirectory() + "/Applications/\(appName).app",
+        ]
+        if let installedPath = installedAppCandidates.first(where: {
+            FileManager.default.fileExists(atPath: $0)
+        }) {
+            let appURL = URL(fileURLWithPath: installedPath)
+            stripAllQuarantine(at: appURL)
+            resignAdHoc(at: appURL)
+            // Touch so Launch Services notices the update
+            try? FileManager.default.setAttributes(
+                [.modificationDate: Date()],
+                ofItemAtPath: installedPath
+            )
+            print("[UpdateService] Post-install hardening complete: \(installedPath)")
+        }
+
+        // ── 4. Success + relaunch ────────────────────────────────────────
+        state = .success(version: expectedVersion)
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        relaunchApp()
     }
 
     // MARK: - Git Pull
@@ -601,8 +665,9 @@ final class UpdateService: ObservableObject {
                 await promptRebuild(repoPath: repoPath)
             }
         } catch {
-            let msg = (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
-                      ?? error.localizedDescription
+            let msg =
+                (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
+                ?? error.localizedDescription
             state = .failed("git pull 失败：\(msg)\n\n请手动运行：\ncd \(repoPath) && git pull")
         }
     }
@@ -610,9 +675,9 @@ final class UpdateService: ObservableObject {
     @MainActor
     private func promptRebuild(repoPath: String) async {
         let alert = NSAlert()
-        alert.messageText     = "代码已更新"
+        alert.messageText = "代码已更新"
         alert.informativeText = "git pull 成功，请重新构建：\n\ncd \(repoPath)\n./MacKeyValue/build.sh --run"
-        alert.alertStyle      = .informational
+        alert.alertStyle = .informational
         alert.addButton(withTitle: "复制命令")
         alert.addButton(withTitle: "关闭")
         let resp = alert.runModal()
@@ -638,31 +703,39 @@ final class UpdateService: ObservableObject {
     private func shell(_ exec: String, args: [String]) async throws -> String {
         try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
-                let proc   = Process()
+                let proc = Process()
                 let stdout = Pipe()
                 let stderr = Pipe()
-                proc.executableURL    = URL(fileURLWithPath: exec)
-                proc.arguments        = args
-                proc.standardOutput   = stdout
-                proc.standardError    = stderr
+                proc.executableURL = URL(fileURLWithPath: exec)
+                proc.arguments = args
+                proc.standardOutput = stdout
+                proc.standardError = stderr
                 // Pass through PATH so brew can find its dependencies
                 var env = ProcessInfo.processInfo.environment
-                env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
+                env["PATH"] =
+                    "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
                 proc.environment = env
 
                 do {
                     try proc.run()
                     proc.waitUntilExit()
-                    let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                    let out =
+                        String(
+                            data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
+                        ) ?? ""
+                    let err =
+                        String(
+                            data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
+                        ) ?? ""
                     if proc.terminationStatus == 0 {
                         cont.resume(returning: out + err)
                     } else {
-                        cont.resume(throwing: NSError(
-                            domain: "UpdateService",
-                            code:   Int(proc.terminationStatus),
-                            userInfo: [NSLocalizedDescriptionKey: err.isEmpty ? out : err]
-                        ))
+                        cont.resume(
+                            throwing: NSError(
+                                domain: "UpdateService",
+                                code: Int(proc.terminationStatus),
+                                userInfo: [NSLocalizedDescriptionKey: err.isEmpty ? out : err]
+                            ))
                     }
                 } catch {
                     cont.resume(throwing: error)
@@ -687,8 +760,9 @@ final class UpdateService: ObservableObject {
     ///      bypasses Launch Services / Gatekeeper.
     ///   3. Terminate ourselves so the watcher can proceed.
     private func relaunchApp() {
-        let appURL  = Bundle.main.bundleURL
-        let binPath = appURL
+        let appURL = Bundle.main.bundleURL
+        let binPath =
+            appURL
             .appendingPathComponent("Contents/MacOS/MacKeyValue")
             .path
 
@@ -700,17 +774,17 @@ final class UpdateService: ObservableObject {
         //   • Launches the binary directly — no Launch Services / Gatekeeper.
         //   • Uses `disown` so the shell doesn't wait for the child.
         let script = """
-        while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done
-        /usr/bin/xattr -cr "\(appURL.path)" 2>/dev/null
-        "\(binPath)" &
-        disown
-        """
+            while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done
+            /usr/bin/xattr -cr "\(appURL.path)" 2>/dev/null
+            "\(binPath)" &
+            disown
+            """
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/sh")
-        proc.arguments     = ["-c", script]
+        proc.arguments = ["-c", script]
         proc.standardOutput = FileHandle.nullDevice
-        proc.standardError  = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
         try? proc.run()
 
         // Terminate ourselves so the watcher script can relaunch.
@@ -732,7 +806,7 @@ final class UpdateService: ObservableObject {
     private func isNewer(_ v1: String, than v2: String) -> Bool {
         let seg1 = v1.split(separator: ".").compactMap { Int($0) }
         let seg2 = v2.split(separator: ".").compactMap { Int($0) }
-        let len  = max(seg1.count, seg2.count)
+        let len = max(seg1.count, seg2.count)
         for i in 0..<len {
             let a = i < seg1.count ? seg1[i] : 0
             let b = i < seg2.count ? seg2[i] : 0
@@ -744,7 +818,8 @@ final class UpdateService: ObservableObject {
     // MARK: - GitHub API
 
     private func fetchLatestRelease() async throws -> GitHubRelease {
-        let url = URL(string: "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest")!
+        let url = URL(
+            string: "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest")!
         var req = URLRequest(url: url, timeoutInterval: 12)
         req.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         req.setValue("KeyValue/\(currentVersion) (macOS)", forHTTPHeaderField: "User-Agent")

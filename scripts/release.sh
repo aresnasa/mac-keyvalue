@@ -148,6 +148,15 @@ DMG_NAME="${APP_NAME}-${VERSION}-${ARCH_NAME}.dmg"
 DMG_PATH="${DIST_DIR}/${DMG_NAME}"
 SHA_PATH="${DMG_PATH}.sha256"
 
+# Also define names for the "other" architecture DMG (for Homebrew dual-arch)
+if [ "$ARCH_NAME" = "apple-silicon" ]; then
+    OTHER_ARCH_NAME="intel"
+else
+    OTHER_ARCH_NAME="apple-silicon"
+fi
+OTHER_DMG_NAME="${APP_NAME}-${VERSION}-${OTHER_ARCH_NAME}.dmg"
+OTHER_DMG_PATH="${DIST_DIR}/${OTHER_DMG_NAME}"
+
 # ── Banner ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════╗${RESET}"
@@ -334,7 +343,16 @@ On first launch, the app will guide you through granting:
 
 ### 🛠️ Requirements
 - macOS 13.0+ (Ventura or later)
-- Apple Silicon (arm64)
+- Apple Silicon (arm64) or Intel (x86_64)
+
+### ⬆️ Upgrading
+
+**Homebrew** — the app auto-detects Homebrew installs and runs \`brew update && brew upgrade\` in-app:
+\`\`\`bash
+brew update && brew upgrade --cask keyvalue
+\`\`\`
+
+**DMG / Direct download** — the app auto-downloads the matching DMG, replaces itself, and restarts.
 
 ---
 
@@ -368,6 +386,19 @@ else
     if [ -f "$SHA_PATH" ]; then
         ASSETS+=("$SHA_PATH")
     fi
+    # Include the other-architecture DMG if it exists (cross-compiled or
+    # copied from another machine into dist/).
+    if [ -f "$OTHER_DMG_PATH" ]; then
+        ASSETS+=("$OTHER_DMG_PATH")
+        OTHER_SHA_PATH="${OTHER_DMG_PATH}.sha256"
+        if [ -f "$OTHER_SHA_PATH" ]; then
+            ASSETS+=("$OTHER_SHA_PATH")
+        fi
+        info "Including other-arch DMG: $OTHER_DMG_NAME"
+    else
+        warn "Other-arch DMG not found: $OTHER_DMG_PATH"
+        warn "Homebrew Cask will only work for ${ARCH_NAME} until you upload the other DMG."
+    fi
 
     gh release create "$TAG" \
         "${ASSETS[@]}" \
@@ -385,11 +416,34 @@ fi
 if ! $SKIP_BREW && ! $PRERELEASE; then
     step "Updating Homebrew formula"
 
+    # Compute SHA256 for both architectures (if both DMGs exist).
+    # The current build only produces the local arch, so we use the same
+    # SHA for the "other" arch and expect the release to be updated with
+    # a second DMG built on the other architecture (CI or manual).
+    ARM_DMG="${DIST_DIR}/${APP_NAME}-${VERSION}-apple-silicon.dmg"
+    INTEL_DMG="${DIST_DIR}/${APP_NAME}-${VERSION}-intel.dmg"
+
+    SHA256_ARM="$SHA256"
+    SHA256_INTEL="$SHA256"
+    if [ -f "$ARM_DMG" ]; then
+        SHA256_ARM="$(shasum -a 256 "$ARM_DMG" | awk '{print $1}')"
+    fi
+    if [ -f "$INTEL_DMG" ]; then
+        SHA256_INTEL="$(shasum -a 256 "$INTEL_DMG" | awk '{print $1}')"
+    fi
+
     CASK_CONTENT="cask \"keyvalue\" do
   version \"${VERSION}\"
-  sha256 \"${SHA256}\"
 
-  url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-apple-silicon.dmg\"
+  on_arm do
+    sha256 \"${SHA256_ARM}\"
+    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-apple-silicon.dmg\"
+  end
+  on_intel do
+    sha256 \"${SHA256_INTEL}\"
+    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-intel.dmg\"
+  end
+
   name \"${APP_NAME}\"
   desc \"K🔒V — Secure password & key-value manager for macOS\"
   homepage \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}\"
@@ -404,9 +458,34 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
   app \"${APP_NAME}.app\"
 
   postflight do
-    # Remove quarantine attribute for ad-hoc signed app
+    # 1. Strip ALL extended attributes (including quarantine)
     system_command \"/usr/bin/xattr\",
                    args: [\"-cr\", \"#{appdir}/${APP_NAME}.app\"],
+                   sudo: false
+
+    # 2. Re-sign nested frameworks / dylibs with ad-hoc identity
+    Dir.glob(\"#{appdir}/${APP_NAME}.app/Contents/**/*.{framework,dylib,bundle}\").each do |nested|
+      system_command \"/usr/bin/codesign\",
+                     args: [\"--force\", \"--sign\", \"-\", \"--timestamp=none\", nested],
+                     sudo: false
+    end
+
+    # 3. Re-sign the main app bundle with ad-hoc identity.
+    #    This is critical: the original ad-hoc signature from the build
+    #    machine is invalidated when Homebrew copies the .app to
+    #    /Applications.  Without re-signing, macOS 14+ / Sequoia / Tahoe
+    #    will block the app with \"Apple cannot verify\".
+    ent = \"#{appdir}/${APP_NAME}.app/Contents/Resources/MacKeyValue-adhoc.entitlements\"
+    codesign_args = [\"--force\", \"--sign\", \"-\", \"--timestamp=none\", \"--deep\"]
+    codesign_args += [\"--entitlements\", ent] if File.exist?(ent)
+    codesign_args << \"#{appdir}/${APP_NAME}.app\"
+    system_command \"/usr/bin/codesign\",
+                   args: codesign_args,
+                   sudo: false
+
+    # 4. Touch the bundle so Launch Services picks up the change
+    system_command \"/usr/bin/touch\",
+                   args: [\"#{appdir}/${APP_NAME}.app\"],
                    sudo: false
   end
 
@@ -424,8 +503,9 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
 
     The app will guide you through the setup on first launch.
 
-    Since this is an ad-hoc signed open-source app, if macOS blocks it:
+    If macOS blocks the app after install or upgrade, run:
       xattr -cr /Applications/${APP_NAME}.app
+      codesign --force --sign - --timestamp=none --deep /Applications/${APP_NAME}.app
   EOS
 end
 "
@@ -504,6 +584,9 @@ if ! $DRY_RUN; then
         echo -e "  ${DIM}Homebrew Install:${RESET}"
         echo -e "    brew tap ${GITHUB_OWNER}/tap"
         echo -e "    brew install --cask keyvalue"
+        echo ""
+        echo -e "  ${DIM}Homebrew Upgrade:${RESET}"
+        echo -e "    brew update && brew upgrade --cask keyvalue"
         echo ""
     fi
     echo -e "  ${DIM}SHA256:${RESET} ${SHA256}"

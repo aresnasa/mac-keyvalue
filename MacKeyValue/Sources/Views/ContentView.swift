@@ -74,7 +74,8 @@ struct MainView: View {
                 .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 400)
         } detail: {
             if let entryId = viewModel.selectedEntryId,
-               let entry = viewModel.storageService.getEntry(byId: entryId) {
+                let entry = viewModel.storageService.getEntry(byId: entryId)
+            {
                 EntryDetailView(entry: entry)
             } else {
                 EmptyDetailView()
@@ -118,7 +119,10 @@ struct MainView: View {
         Button {
             Task { await viewModel.performGistSync() }
         } label: {
-            Label("同步", systemImage: viewModel.isSyncing ? "arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
+            Label(
+                "同步",
+                systemImage: viewModel.isSyncing
+                    ? "arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
         }
         .disabled(viewModel.isSyncing)
         .help("同步到 GitHub Gist")
@@ -226,7 +230,8 @@ struct SidebarView: View {
                     title: "全部",
                     icon: "tray.full.fill",
                     count: viewModel.entries.count,
-                    isSelected: viewModel.filterState.selectedCategory == nil && !viewModel.filterState.showFavoritesOnly
+                    isSelected: viewModel.filterState.selectedCategory == nil
+                        && !viewModel.filterState.showFavoritesOnly
                 ) {
                     viewModel.filterState.selectedCategory = nil
                     viewModel.filterState.showFavoritesOnly = false
@@ -578,7 +583,11 @@ struct EntryDetailView: View {
                                         .font(.caption)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
-                                        .background(Capsule().fill(Color(red: 0.80, green: 0.65, blue: 0.20).opacity(0.15)))
+                                        .background(
+                                            Capsule().fill(
+                                                Color(red: 0.80, green: 0.65, blue: 0.20).opacity(
+                                                    0.15))
+                                        )
                                         .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
                                 }
                             }
@@ -592,21 +601,27 @@ struct EntryDetailView: View {
 
                     // Action buttons — icon-only for compact layout
                     HStack(spacing: 6) {
-                        Button { viewModel.copyEntryValue(id: entry.id) } label: {
+                        Button {
+                            viewModel.copyEntryValue(id: entry.id)
+                        } label: {
                             Image(systemName: "doc.on.doc")
                         }
                         .buttonStyle(.bordered)
                         .keyboardShortcut("c", modifiers: [.command, .shift])
                         .help("复制值 (⇧⌘C)")
 
-                        Button { viewModel.pasteEntryValue(id: entry.id) } label: {
+                        Button {
+                            viewModel.pasteEntryValue(id: entry.id)
+                        } label: {
                             Image(systemName: "doc.on.clipboard")
                         }
                         .buttonStyle(.bordered)
                         .keyboardShortcut("v", modifiers: [.command, .shift])
                         .help("粘贴到目标窗口 (⇧⌘V)")
 
-                        Button { viewModel.typeEntryValue(id: entry.id) } label: {
+                        Button {
+                            viewModel.typeEntryValue(id: entry.id)
+                        } label: {
                             Image(systemName: "keyboard")
                         }
                         .buttonStyle(.bordered)
@@ -615,7 +630,9 @@ struct EntryDetailView: View {
 
                         Spacer(minLength: 0)
 
-                        Button { viewModel.prepareEditEntry(entry) } label: {
+                        Button {
+                            viewModel.prepareEditEntry(entry)
+                        } label: {
                             Image(systemName: "pencil")
                         }
                         .buttonStyle(.borderedProminent)
@@ -648,9 +665,11 @@ struct EntryDetailView: View {
                                 }
                             }
                         } label: {
-                            Label(isValueRevealed ? "隐藏" : "显示",
-                                  systemImage: isValueRevealed ? "eye.slash" : "eye")
-                                .font(.caption)
+                            Label(
+                                isValueRevealed ? "隐藏" : "显示",
+                                systemImage: isValueRevealed ? "eye.slash" : "eye"
+                            )
+                            .font(.caption)
                         }
                         .buttonStyle(.borderless)
                     }
@@ -761,16 +780,19 @@ struct EntryDetailView: View {
                         .font(.subheadline.bold())
                         .foregroundStyle(.secondary)
 
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                    ], spacing: 8) {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible()),
+                        ], spacing: 8
+                    ) {
                         MetadataItem(label: "创建时间", value: entry.createdAt.formatted(.dateTime))
                         MetadataItem(label: "更新时间", value: entry.updatedAt.formatted(.dateTime))
                         MetadataItem(label: "使用次数", value: "\(entry.usageCount)")
                         MetadataItem(
                             label: "上次使用",
-                            value: entry.lastUsedAt?.formatted(.relative(presentation: .named)) ?? "从未使用"
+                            value: entry.lastUsedAt?.formatted(.relative(presentation: .named))
+                                ?? "从未使用"
                         )
                     }
                 }
@@ -879,7 +901,9 @@ struct FlowLayout: Layout {
         return result.size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    ) {
         let result = layout(subviews: subviews, containerWidth: bounds.width)
         for (index, position) in result.positions.enumerated() {
             subviews[index].place(
@@ -981,10 +1005,14 @@ struct OnboardingView: View {
                 .frame(maxWidth: 500)
 
             VStack(alignment: .leading, spacing: 12) {
-                FeatureRow(icon: "lock.shield.fill", title: "AES-256 加密", description: "所有密码使用行业标准加密算法保护")
+                FeatureRow(
+                    icon: "lock.shield.fill", title: "AES-256 加密", description: "所有密码使用行业标准加密算法保护")
                 FeatureRow(icon: "keyboard", title: "模拟键盘输入", description: "绕过粘贴限制，直接模拟键盘输入密码")
-                FeatureRow(icon: "doc.on.clipboard.fill", title: "智能剪贴板", description: "自动记录剪贴板历史，支持隐私模式")
-                FeatureRow(icon: "arrow.triangle.2.circlepath", title: "Gist 同步", description: "将常用条目同步到 GitHub Gist")
+                FeatureRow(
+                    icon: "doc.on.clipboard.fill", title: "智能剪贴板", description: "自动记录剪贴板历史，支持隐私模式")
+                FeatureRow(
+                    icon: "arrow.triangle.2.circlepath", title: "Gist 同步",
+                    description: "将常用条目同步到 GitHub Gist")
             }
             .frame(maxWidth: 400)
 
@@ -1267,7 +1295,8 @@ struct SettingsSheet: View {
                     }
                     LabeledContent("主密钥") {
                         Text(viewModel.encryptionService.hasMasterKey ? "已设置" : "未设置")
-                            .foregroundStyle(viewModel.encryptionService.hasMasterKey ? .green : .red)
+                            .foregroundStyle(
+                                viewModel.encryptionService.hasMasterKey ? .green : .red)
                     }
                 }
             }
@@ -1329,18 +1358,24 @@ struct GistSyncSheet: View {
                 }
 
                 Section("同步配置") {
-                    Toggle("仅同步收藏条目", isOn: Binding(
-                        get: { viewModel.gistSyncService.configuration.syncOnlyFavorites },
-                        set: { viewModel.gistSyncService.configuration.syncOnlyFavorites = $0 }
-                    ))
-                    Toggle("排除私密条目", isOn: Binding(
-                        get: { viewModel.gistSyncService.configuration.syncOnlyNonPrivate },
-                        set: { viewModel.gistSyncService.configuration.syncOnlyNonPrivate = $0 }
-                    ))
-                    Toggle("公开 Gist", isOn: Binding(
-                        get: { viewModel.gistSyncService.configuration.isPublic },
-                        set: { viewModel.gistSyncService.configuration.isPublic = $0 }
-                    ))
+                    Toggle(
+                        "仅同步收藏条目",
+                        isOn: Binding(
+                            get: { viewModel.gistSyncService.configuration.syncOnlyFavorites },
+                            set: { viewModel.gistSyncService.configuration.syncOnlyFavorites = $0 }
+                        ))
+                    Toggle(
+                        "排除私密条目",
+                        isOn: Binding(
+                            get: { viewModel.gistSyncService.configuration.syncOnlyNonPrivate },
+                            set: { viewModel.gistSyncService.configuration.syncOnlyNonPrivate = $0 }
+                        ))
+                    Toggle(
+                        "公开 Gist",
+                        isOn: Binding(
+                            get: { viewModel.gistSyncService.configuration.isPublic },
+                            set: { viewModel.gistSyncService.configuration.isPublic = $0 }
+                        ))
                 }
 
                 Section("同步操作") {
@@ -1440,12 +1475,16 @@ struct HotkeySettingsSheet: View {
                                         .fill(Color.secondary.opacity(0.1))
                                 )
 
-                            Toggle("", isOn: Binding(
-                                get: { binding.isEnabled },
-                                set: { newValue in
-                                    try? viewModel.hotkeyService.setBindingEnabled(id: binding.id, enabled: newValue)
-                                }
-                            ))
+                            Toggle(
+                                "",
+                                isOn: Binding(
+                                    get: { binding.isEnabled },
+                                    set: { newValue in
+                                        try? viewModel.hotkeyService.setBindingEnabled(
+                                            id: binding.id, enabled: newValue)
+                                    }
+                                )
+                            )
                             .labelsHidden()
 
                             Button(role: .destructive) {
@@ -1477,15 +1516,15 @@ struct HotkeySettingsSheet: View {
 
     private func iconColor(for type: HotkeyBinding.ActionType) -> Color {
         switch type {
-        case .copyPassword:         return .blue
-        case .typePassword:         return .purple
-        case .showPopover:          return .accentColor
-        case .togglePrivacyMode:    return .orange
+        case .copyPassword: return .blue
+        case .typePassword: return .purple
+        case .showPopover: return .accentColor
+        case .togglePrivacyMode: return .orange
         case .showClipboardHistory: return .teal
-        case .quickSearch:          return .indigo
-        case .captureScreenshot:    return .green
-        case .ocrScreenshot:        return .mint
-        case .custom:               return .secondary
+        case .quickSearch: return .indigo
+        case .captureScreenshot: return .green
+        case .ocrScreenshot: return .mint
+        case .custom: return .secondary
         }
     }
 
@@ -1750,7 +1789,6 @@ struct AboutSheet: View {
 
     // MARK: - Links View
 
-
     // MARK: - Update Section
 
     @ViewBuilder
@@ -1825,12 +1863,18 @@ struct AboutSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.down.circle.fill")
-                            Text({
-                                if case .homebrew = updater.installMethod { return "通过 Homebrew 更新" }
-                                if case .sourceTree = updater.installMethod { return "通过 Git 更新" }
-                                return "下载并安装更新"
-                            }())
-                                .bold()
+                            Text(
+                                {
+                                    if case .homebrew = updater.installMethod {
+                                        return "通过 Homebrew 更新"
+                                    }
+                                    if case .sourceTree = updater.installMethod {
+                                        return "通过 Git 更新"
+                                    }
+                                    return "下载并安装更新"
+                                }()
+                            )
+                            .bold()
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -1878,23 +1922,29 @@ struct AboutSheet: View {
             case .updating:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text({
-                    if case .homebrew = updater.installMethod { return "正在运行 brew upgrade…" }
-                    return "正在运行 git pull…"
-                }())
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        {
+                            if case .homebrew = updater.installMethod {
+                                return "正在运行 brew update && brew upgrade…"
+                            }
+                            return "正在运行 git pull…"
+                        }()
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                     Spacer()
                 }
 
             case .success(let version):
                 HStack(spacing: 8) {
-                    Label(version == "latest"
-                          ? "代码已更新，请重新构建"
-                          : "更新成功！正在重启…",
-                          systemImage: "checkmark.circle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.green)
+                    Label(
+                        version == "latest"
+                            ? "代码已更新，请重新构建"
+                            : "更新成功！正在重启…",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.green)
                     Spacer()
                 }
 
@@ -1934,11 +1984,13 @@ struct AboutSheet: View {
 
             // ── External Links ──
             HStack(spacing: 16) {
-                linkButton("GitHub", icon: "chevron.left.forwardslash.chevron.right",
-                           url: "https://github.com/aresnasa/mac-keyvalue")
+                linkButton(
+                    "GitHub", icon: "chevron.left.forwardslash.chevron.right",
+                    url: "https://github.com/aresnasa/mac-keyvalue")
 
-                linkButton("反馈问题", icon: "exclamationmark.bubble",
-                           url: "https://github.com/aresnasa/mac-keyvalue/issues")
+                linkButton(
+                    "反馈问题", icon: "exclamationmark.bubble",
+                    url: "https://github.com/aresnasa/mac-keyvalue/issues")
             }
 
             Button {
@@ -2067,7 +2119,8 @@ struct AboutSheet: View {
     private func loadQRImage(named resourceName: String) -> NSImage? {
         // 1. Bundle resource (release / Xcode build)
         if let url = Bundle.main.url(forResource: resourceName, withExtension: "png"),
-           let img = NSImage(contentsOf: url) {
+            let img = NSImage(contentsOf: url)
+        {
             return img
         }
         // 2. Dev-build search paths (swift run / bare executable)
