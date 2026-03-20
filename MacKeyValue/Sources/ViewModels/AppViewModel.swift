@@ -620,6 +620,12 @@ final class AppViewModel: ObservableObject {
             return
         }
 
+        // Guard: entries synced from Gist / imported without a value have empty encryptedValue.
+        guard !entry.encryptedValue.isEmpty else {
+            showStatusMessage("该条目没有加密值（可能来自 Gist 同步），请先编辑并设置值")
+            return
+        }
+
         // Authenticate via Touch ID / password with session caching.
         Task { @MainActor in
             let authenticated = await biometricService.authenticate(reason: "复制密码「\(entry.title)」")
@@ -666,6 +672,12 @@ final class AppViewModel: ObservableObject {
     func pasteEntryValue(id: UUID, clearAfter: TimeInterval = 120, countdownSeconds: Int = 3) {
         guard let entry = storageService.getEntry(byId: id) else {
             showStatusMessage("找不到条目")
+            return
+        }
+
+        // Guard: entries synced from Gist / imported without a value have empty encryptedValue.
+        guard !entry.encryptedValue.isEmpty else {
+            showStatusMessage("该条目没有加密值（可能来自 Gist 同步），请先编辑并设置值")
             return
         }
 
@@ -775,6 +787,12 @@ final class AppViewModel: ObservableObject {
     ) {
         guard let entry = storageService.getEntry(byId: id) else {
             showStatusMessage("找不到条目")
+            return
+        }
+
+        // Guard: entries synced from Gist / imported without a value have empty encryptedValue.
+        guard !entry.encryptedValue.isEmpty else {
+            showStatusMessage("该条目没有加密值（可能来自 Gist 同步），请先编辑并设置值")
             return
         }
 

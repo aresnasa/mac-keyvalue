@@ -590,6 +590,12 @@ final class HotkeyService: ObservableObject {
             return
         }
 
+        // Guard: entries synced from Gist / imported without a value have empty encryptedValue.
+        guard !entry.encryptedValue.isEmpty else {
+            print("[HotkeyService] Entry \(entryId) has no encrypted value (possibly from Gist sync)")
+            return
+        }
+
         do {
             try ClipboardService.shared.copyDecryptedValue(entry.encryptedValue, clearAfter: 120)
             try StorageService.shared.recordEntryUsage(id: entryId)
@@ -608,6 +614,12 @@ final class HotkeyService: ObservableObject {
     private func handleTypePassword(_ binding: HotkeyBinding) {
         guard let entryId = binding.entryId,
               let entry = StorageService.shared.getEntry(byId: entryId) else {
+            return
+        }
+
+        // Guard: entries synced from Gist / imported without a value have empty encryptedValue.
+        guard !entry.encryptedValue.isEmpty else {
+            print("[HotkeyService] Entry \(entryId) has no encrypted value (possibly from Gist sync)")
             return
         }
 

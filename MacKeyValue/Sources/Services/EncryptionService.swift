@@ -110,7 +110,19 @@ final class EncryptionService {
     }
 
     /// Decrypts a combined blob back into raw `Data`.
+    ///
+    /// The combined blob must contain at least a 12-byte nonce + 16-byte GCM
+    /// tag (28 bytes minimum). Passing empty or too-short data is treated as
+    /// "no encrypted value" rather than a crypto error.
     func decrypt(_ combined: Data) throws -> Data {
+        // AES-GCM combined = nonce(12) + ciphertext(>=0) + tag(16) => min 28 bytes
+        guard combined.count >= 28 else {
+            throw EncryptionError.invalidData(
+                combined.isEmpty
+                    ? "该条目没有加密值（可能来自 Gist 同步或导入）"
+                    : "加密数据长度不足（\(combined.count) 字节），可能已损坏"
+            )
+        }
         let key = try getMasterKey()
         do {
             let sealedBox = try AES.GCM.SealedBox(combined: combined)
