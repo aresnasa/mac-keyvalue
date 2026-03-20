@@ -601,21 +601,57 @@ final class UpdateService: ObservableObject {
         }
 
         // ── 2. Upgrade the cask ──────────────────────────────────────────
+        // `brew upgrade --cask` can fail with "already an App at …" when
+        // /Applications/KeyValue.app exists but wasn't installed by Homebrew
+        // (e.g. manual DMG install, or app self-update replaced the bundle).
+        // In that case we fall back to `brew install --cask --force` which
+        // forcefully overwrites the existing .app.
+        var upgraded = false
         do {
             let upgradeOut = try await shell(brew, args: ["upgrade", "--cask", "keyvalue"])
             print("[UpdateService] brew upgrade:\n\(upgradeOut)")
+            upgraded = true
         } catch {
             let msg =
                 (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
                 ?? error.localizedDescription
-            // Check if "already installed" / "already up-to-date"
+
+            // Already up-to-date — not an error.
             if msg.contains("already installed") || msg.contains("up-to-date") {
                 state = .upToDate
                 return
             }
-            state = .failed(
-                "brew upgrade 失败：\(msg)\n\n请手动运行：\nbrew update && brew upgrade --cask keyvalue")
-            return
+
+            // "It seems there is already an App at '/Applications/KeyValue.app'"
+            // → force reinstall to overwrite it.
+            if msg.contains("already an App") || msg.contains("already a App")
+                || msg.contains("already exists")
+            {
+                print("[UpdateService] Existing app detected, retrying with --force reinstall…")
+                do {
+                    let reinstallOut = try await shell(
+                        brew,
+                        args: ["install", "--cask", "keyvalue", "--force"]
+                    )
+                    print("[UpdateService] brew install --force:\n\(reinstallOut)")
+                    upgraded = true
+                } catch {
+                    let retryMsg =
+                        (error as NSError).userInfo[NSLocalizedDescriptionKey] as? String
+                        ?? error.localizedDescription
+                    state = .failed(
+                        "brew 强制安装失败：\(retryMsg)\n\n请手动运行：\nbrew install --cask keyvalue --force"
+                    )
+                    return
+                }
+            }
+
+            if !upgraded {
+                state = .failed(
+                    "brew upgrade 失败：\(msg)\n\n请手动运行：\nbrew update && brew upgrade --cask keyvalue"
+                )
+                return
+            }
         }
 
         // ── 3. Post-install hardening ────────────────────────────────────
