@@ -70,12 +70,7 @@ final class UpdateService: ObservableObject {
             case .unknown:    return "questionmark.app.fill"
             }
         }
-        var canAutoUpdate: Bool {
-            switch self {
-            case .homebrew, .sourceTree, .appBundle: return true
-            default: return false
-            }
-        }
+        var canAutoUpdate: Bool { true }
     }
 
     enum UpdateState: Equatable {
@@ -189,10 +184,8 @@ final class UpdateService: ObservableObject {
             await upgradeViaBrew(brewPath: brewPath, expectedVersion: version)
         case .sourceTree(let repoPath):
             await pullViaGit(repoPath: repoPath)
-        case .appBundle:
+        case .appBundle, .unknown:
             await downloadAndInstall(version: version, fallbackURL: url)
-        default:
-            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
         }
     }
 
@@ -250,8 +243,7 @@ final class UpdateService: ObservableObject {
     private func downloadAndInstall(version: String, fallbackURL: String) async {
         // ── 1. Resolve DMG download URL ──────────────────────────────────
         guard let dmgURL = resolveDMGAssetURL() else {
-            // No matching asset – fall back to opening the browser
-            if let u = URL(string: fallbackURL) { NSWorkspace.shared.open(u) }
+            state = .failed("该版本未找到适用于当前架构的 DMG 安装包，请前往 GitHub Releases 手动下载：\n\(fallbackURL)")
             return
         }
 

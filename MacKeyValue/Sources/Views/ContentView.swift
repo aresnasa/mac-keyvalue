@@ -1824,13 +1824,11 @@ struct AboutSheet: View {
                         Task { await updater.performUpdate() }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: updater.installMethod.canAutoUpdate
-                                  ? "arrow.down.circle.fill" : "safari")
+                            Image(systemName: "arrow.down.circle.fill")
                             Text({
                                 if case .homebrew = updater.installMethod { return "通过 Homebrew 更新" }
                                 if case .sourceTree = updater.installMethod { return "通过 Git 更新" }
-                                if case .appBundle = updater.installMethod { return "下载并安装更新" }
-                                return "前往下载页"
+                                return "下载并安装更新"
                             }())
                                 .bold()
                         }
