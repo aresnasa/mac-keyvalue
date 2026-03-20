@@ -15,6 +15,7 @@ set -euo pipefail
 #    ./scripts/release.sh 1.2.3              # Release v1.2.3
 #    ./scripts/release.sh 1.2.3 --dry-run    # Preview without publishing
 #    ./scripts/release.sh 1.2.3 --skip-brew  # Skip Homebrew update
+#    ./scripts/release.sh 1.2.3 --fix-sha    # Re-download DMG & fix Cask SHA only
 #    ./scripts/release.sh --help             # Show help
 #
 #  Prerequisites:
@@ -60,6 +61,7 @@ SKIP_BREW=false
 SKIP_BUILD=false
 PRERELEASE=false
 FORCE=false
+FIX_SHA=false
 
 show_help() {
     cat <<'EOF'
@@ -78,6 +80,7 @@ show_help() {
 ║    --dry-run       Preview all steps without executing        ║
 ║    --skip-brew     Skip Homebrew formula update               ║
 ║    --skip-build    Skip DMG build (use existing dist/)        ║
+║    --fix-sha       Only fix Cask SHA (no build/tag/release)   ║
 ║    --force         Force release even if tag exists           ║
 ║    --help          Show this help                             ║
 ║                                                              ║
@@ -85,6 +88,7 @@ show_help() {
 ║    ./scripts/release.sh 1.0.0                                ║
 ║    ./scripts/release.sh 1.1.0 --dry-run                      ║
 ║    ./scripts/release.sh 2.0.0-beta.1 --skip-brew             ║
+║    ./scripts/release.sh 0.1.1 --fix-sha                      ║
 ║                                                              ║
 ║  PREREQUISITES                                               ║
 ║    • gh CLI authenticated: gh auth status                    ║
@@ -101,6 +105,7 @@ for arg in "$@"; do
         --dry-run)     DRY_RUN=true ;;
         --skip-brew)   SKIP_BREW=true ;;
         --skip-build)  SKIP_BUILD=true ;;
+        --fix-sha)     FIX_SHA=true; SKIP_BUILD=true ;;
         --force)       FORCE=true ;;
         --help|-h)     show_help ;;
         -*)
@@ -156,6 +161,198 @@ else
 fi
 OTHER_DMG_NAME="${APP_NAME}-${VERSION}-${OTHER_ARCH_NAME}.dmg"
 OTHER_DMG_PATH="${DIST_DIR}/${OTHER_DMG_NAME}"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  --fix-sha: Quick SHA fix mode
+# ══════════════════════════════════════════════════════════════════════════════
+
+if $FIX_SHA; then
+    echo ""
+    echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}${BOLD}║   KeyValue – Fix Cask SHA256                     ║${RESET}"
+    echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════╝${RESET}"
+    echo ""
+    echo -e "  ${DIM}Version:${RESET} ${BOLD}${VERSION}${RESET} (tag: ${TAG})"
+    echo ""
+
+    step "Downloading DMG from GitHub Release to compute real SHA256"
+
+    VERIFY_TMPDIR="$(mktemp -d)"
+    trap 'rm -rf "$VERIFY_TMPDIR"' EXIT
+
+    DOWNLOAD_URL_ARM="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${TAG}/${APP_NAME}-${VERSION}-apple-silicon.dmg"
+    DOWNLOAD_URL_INTEL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${TAG}/${APP_NAME}-${VERSION}-intel.dmg"
+
+    SHA256_ARM=""
+    SHA256_INTEL=""
+
+    info "Downloading ARM DMG…"
+    if curl -fSL --progress-bar -o "${VERIFY_TMPDIR}/arm.dmg" "$DOWNLOAD_URL_ARM" 2>&1; then
+        SHA256_ARM="$(shasum -a 256 "${VERIFY_TMPDIR}/arm.dmg" | awk '{print $1}')"
+        success "SHA256 (arm64):  $SHA256_ARM"
+    else
+        warn "ARM DMG not found at: $DOWNLOAD_URL_ARM"
+    fi
+
+    info "Downloading Intel DMG…"
+    if curl -fSL --progress-bar -o "${VERIFY_TMPDIR}/intel.dmg" "$DOWNLOAD_URL_INTEL" 2>&1; then
+        SHA256_INTEL="$(shasum -a 256 "${VERIFY_TMPDIR}/intel.dmg" | awk '{print $1}')"
+        success "SHA256 (x86_64): $SHA256_INTEL"
+    else
+        warn "Intel DMG not found at: $DOWNLOAD_URL_INTEL"
+    fi
+
+    rm -rf "$VERIFY_TMPDIR"
+    trap - EXIT
+
+    if [ -z "$SHA256_ARM" ] && [ -z "$SHA256_INTEL" ]; then
+        fail "Could not download any DMG from GitHub Release ${TAG}. Is the release published?"
+    fi
+
+    # Use whichever we got; fall back to the other if one is missing
+    [ -z "$SHA256_ARM" ]   && SHA256_ARM="$SHA256_INTEL"
+    [ -z "$SHA256_INTEL" ] && SHA256_INTEL="$SHA256_ARM"
+
+    step "Updating Homebrew formula with verified SHA256"
+
+    CASK_CONTENT="cask \"keyvalue\" do
+  version \"${VERSION}\"
+
+  on_arm do
+    sha256 \"${SHA256_ARM}\"
+    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-apple-silicon.dmg\"
+  end
+  on_intel do
+    sha256 \"${SHA256_INTEL}\"
+    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-intel.dmg\"
+  end
+
+  name \"${APP_NAME}\"
+  desc \"K🔒V — Secure password & key-value manager for macOS\"
+  homepage \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}\"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  depends_on macos: \">= :ventura\"
+
+  app \"${APP_NAME}.app\"
+
+  postflight do
+    system_command \"/usr/bin/xattr\",
+                   args: [\"-cr\", \"#{appdir}/${APP_NAME}.app\"],
+                   sudo: false
+
+    Dir.glob(\"#{appdir}/${APP_NAME}.app/Contents/**/*.{framework,dylib}\").each do |nested|
+      system_command \"/usr/bin/codesign\",
+                     args: [\"--force\", \"--sign\", \"-\", \"--timestamp=none\", nested],
+                     sudo: false
+    end
+    Dir.glob(\"#{appdir}/${APP_NAME}.app/Contents/**/*.bundle\").each do |nested|
+      next unless File.exist?(File.join(nested, \"Info.plist\"))
+      system_command \"/usr/bin/codesign\",
+                     args: [\"--force\", \"--sign\", \"-\", \"--timestamp=none\", nested],
+                     sudo: false
+    end
+
+    ent = \"#{appdir}/${APP_NAME}.app/Contents/Resources/MacKeyValue-adhoc.entitlements\"
+    codesign_args = [\"--force\", \"--sign\", \"-\", \"--timestamp=none\"]
+    codesign_args += [\"--entitlements\", ent] if File.exist?(ent)
+    codesign_args << \"#{appdir}/${APP_NAME}.app\"
+    system_command \"/usr/bin/codesign\",
+                   args: codesign_args,
+                   sudo: false
+
+    system_command \"/usr/bin/touch\",
+                   args: [\"#{appdir}/${APP_NAME}.app\"],
+                   sudo: false
+  end
+
+  zap trash: [
+    \"~/Library/Application Support/com.aresnasa.mackeyvalue\",
+    \"~/Library/Preferences/com.aresnasa.mackeyvalue.plist\",
+    \"~/Library/Caches/com.aresnasa.mackeyvalue\",
+  ]
+
+  caveats <<~EOS
+    KeyValue requires two system permissions for keyboard simulation:
+
+      1. Accessibility: System Settings → Privacy & Security → Accessibility
+      2. Input Monitoring: System Settings → Privacy & Security → Input Monitoring
+
+    The app will guide you through the setup on first launch.
+
+    If macOS blocks the app after install or upgrade, run:
+      xattr -cr /Applications/${APP_NAME}.app
+      codesign --force --sign - --timestamp=none /Applications/${APP_NAME}.app
+  EOS
+end
+"
+
+    if $DRY_RUN; then
+        info "[DRY RUN] Would update Casks/keyvalue.rb in ${GITHUB_OWNER}/${HOMEBREW_TAP_REPO}"
+        echo ""
+        echo "$CASK_CONTENT"
+    else
+        BREW_TMPDIR="$(mktemp -d)"
+        trap 'rm -rf "$BREW_TMPDIR"' EXIT
+
+        info "Cloning ${GITHUB_OWNER}/${HOMEBREW_TAP_REPO}…"
+        gh repo clone "${GITHUB_OWNER}/${HOMEBREW_TAP_REPO}" "$BREW_TMPDIR" -- --depth 1 2>&1 | while IFS= read -r line; do
+            info "$line"
+        done
+
+        mkdir -p "$BREW_TMPDIR/Casks"
+        echo "$CASK_CONTENT" > "$BREW_TMPDIR/Casks/keyvalue.rb"
+        info "Formula written: Casks/keyvalue.rb"
+
+        cd "$BREW_TMPDIR"
+        git add -A
+        if git diff --cached --quiet; then
+            info "No changes to Homebrew formula (already up to date)"
+        else
+            git commit -m "Fix SHA256 for keyvalue ${VERSION}
+
+arm64:  ${SHA256_ARM}
+x86_64: ${SHA256_INTEL}"
+
+            git push origin main 2>&1 | while IFS= read -r line; do
+                info "$line"
+            done
+            success "Homebrew formula SHA256 fixed for ${VERSION}"
+        fi
+
+        cd "$PROJECT_ROOT"
+        rm -rf "$BREW_TMPDIR"
+        trap - EXIT
+    fi
+
+    # Also update local tap if it exists
+    LOCAL_TAP="/opt/homebrew/Library/Taps/${GITHUB_OWNER}/homebrew-tap/Casks/keyvalue.rb"
+    if [ -f "$LOCAL_TAP" ] && ! $DRY_RUN; then
+        echo "$CASK_CONTENT" > "$LOCAL_TAP"
+        success "Local tap also updated: $LOCAL_TAP"
+    fi
+
+    echo ""
+    echo -e "${GREEN}${BOLD}  ✅  SHA256 fixed for ${TAG}${RESET}"
+    echo ""
+    echo -e "  ${DIM}arm64:${RESET}  ${SHA256_ARM}"
+    echo -e "  ${DIM}x86_64:${RESET} ${SHA256_INTEL}"
+    echo ""
+    echo -e "  ${DIM}To install/upgrade:${RESET}"
+    echo -e "    brew update && brew install --cask keyvalue"
+    echo -e "    ${DIM}# or${RESET}"
+    echo -e "    brew update && brew upgrade --cask keyvalue"
+    echo ""
+    echo -e "  ${DIM}If Homebrew cache causes issues:${RESET}"
+    echo -e "    brew cleanup keyvalue"
+    echo -e "    brew install --cask keyvalue --force"
+    echo ""
+    exit 0
+fi
 
 # ── Banner ───────────────────────────────────────────────────────────────────
 echo ""
