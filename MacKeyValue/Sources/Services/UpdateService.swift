@@ -366,7 +366,13 @@ final class UpdateService: ObservableObject {
     // MARK: - Mount / Unmount DMG
 
     /// Mounts a DMG and returns the mount-point path (e.g. `/Volumes/KeyValue`).
+    ///
+    /// Before mounting we strip quarantine from the DMG file itself so that
+    /// the mounted volume and its contents don't inherit the attribute.
     private func mountDMG(at dmgURL: URL) async throws -> String {
+        // Strip quarantine from the DMG before mounting so contents are clean.
+        stripAllQuarantine(at: dmgURL)
+
         // `hdiutil attach -nobrowse -noverify -noautoopen -plist <path>`
         // returns a plist with mount info.
         let out = try await shell(
@@ -422,8 +428,9 @@ final class UpdateService: ObservableObject {
     ///   1. Determine the path of the running .app
     ///   2. Move the old .app to a temporary backup
     ///   3. Copy the new .app to the original location
-    ///   4. Strip the quarantine xattr so Gatekeeper doesn't block it
-    ///   5. Remove the backup
+    ///   4. Strip ALL quarantine / security xattrs so Gatekeeper won't block it
+    ///   5. Re-apply ad-hoc code signature (matches build.sh behaviour)
+    ///   6. Remove the backup
     ///
     /// If the copy fails, we attempt to restore from the backup.
     private func replaceCurrentApp(with newAppURL: URL) throws {
@@ -436,6 +443,12 @@ final class UpdateService: ObservableObject {
             throw NSError(domain: "UpdateService", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "当前进程不是 .app 包，无法自动替换"])
         }
+
+        // ── 0. Pre-strip quarantine from the DMG source BEFORE copying ──
+        // The mounted DMG inherits quarantine from the downloaded file.
+        // Stripping it here prevents the attribute from propagating into
+        // the final installation directory.
+        stripAllQuarantine(at: newAppURL)
 
         let parentDir = currentAppURL.deletingLastPathComponent()
         let backupURL = parentDir.appendingPathComponent(".KeyValue-backup-\(UUID().uuidString).app")
@@ -452,23 +465,99 @@ final class UpdateService: ObservableObject {
             throw error
         }
 
-        // 3. Strip quarantine
-        stripQuarantine(at: currentAppURL)
+        // 3. Strip ALL quarantine & security xattrs from the installed copy
+        stripAllQuarantine(at: currentAppURL)
 
-        // 4. Remove backup
+        // 4. Re-sign ad-hoc — matches what build.sh does for open-source
+        //    distribution.  Without this macOS Gatekeeper / AMFI will reject
+        //    the binary because the original ad-hoc signature was tied to
+        //    the build machine.
+        resignAdHoc(at: currentAppURL)
+
+        // 5. Touch the bundle so Launch Services notices the change
+        try? fm.setAttributes(
+            [.modificationDate: Date()],
+            ofItemAtPath: currentAppURL.path
+        )
+
+        // 6. Remove backup
         try? fm.removeItem(at: backupURL)
     }
 
-    /// Removes the com.apple.quarantine extended attribute so macOS doesn't
-    /// block the newly-downloaded app.
-    private func stripQuarantine(at appURL: URL) {
+    // MARK: - Quarantine & Signing Helpers
+
+    /// Recursively clears **all** extended attributes (`xattr -cr`) from the
+    /// app bundle.  This removes `com.apple.quarantine` as well as any other
+    /// security-related xattrs that macOS attaches to downloaded files.
+    /// Using `-c` (clear all) is more thorough than `-d` (delete one).
+    private func stripAllQuarantine(at appURL: URL) {
+        runProcess("/usr/bin/xattr", args: ["-cr", appURL.path])
+    }
+
+    /// Re-applies an ad-hoc code signature to the .app bundle, replicating
+    /// the same flags that `build.sh` uses for open-source distribution:
+    ///
+    ///   codesign --force --sign - --timestamp=none \
+    ///            --entitlements MacKeyValue-adhoc.entitlements <app>
+    ///
+    /// This is necessary because:
+    ///   1. The original ad-hoc signature is bound to the build machine's
+    ///      code-directory hash; copying to a different location invalidates it.
+    ///   2. macOS 14+ / 26 AMFI rejects ad-hoc binaries with restricted
+    ///      entitlements or mismatched signatures.
+    ///   3. A fresh ad-hoc signature makes the binary trusted by the kernel
+    ///      without needing an Apple Developer ID.
+    private func resignAdHoc(at appURL: URL) {
+        // ── Sign nested frameworks / dylibs first ────────────────────────
+        let fm = FileManager.default
+        if let enumerator = fm.enumerator(atPath: appURL.path) {
+            while let relativePath = enumerator.nextObject() as? String {
+                let ext = (relativePath as NSString).pathExtension
+                if ext == "framework" || ext == "dylib" || ext == "bundle" {
+                    let fullPath = appURL.appendingPathComponent(relativePath).path
+                    runProcess("/usr/bin/codesign", args: [
+                        "--force", "--sign", "-",
+                        "--timestamp=none",
+                        fullPath
+                    ])
+                }
+            }
+        }
+
+        // ── Sign the main app bundle ─────────────────────────────────────
+        // Try to locate the ad-hoc entitlements inside the new bundle first
+        // (build.sh copies Resources/ into the bundle).  If not found, sign
+        // without entitlements — still much better than a broken signature.
+        let entitlementsCandidates = [
+            appURL.appendingPathComponent("Contents/Resources/MacKeyValue-adhoc.entitlements"),
+            appURL.appendingPathComponent("Contents/Resources/MacKeyValue.entitlements"),
+        ]
+        let entitlementsPath = entitlementsCandidates.first { fm.fileExists(atPath: $0.path) }
+
+        var args = ["--force", "--sign", "-", "--timestamp=none", "--deep"]
+        if let ent = entitlementsPath {
+            args.insert(contentsOf: ["--entitlements", ent.path], at: args.count - 1)
+        }
+        args.append(appURL.path)
+        runProcess("/usr/bin/codesign", args: args)
+    }
+
+    /// Runs a process synchronously, discarding output.  Best-effort; ignores errors.
+    @discardableResult
+    private func runProcess(_ executablePath: String, args: [String]) -> Int32 {
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-        proc.arguments     = ["-dr", "com.apple.quarantine", appURL.path]
+        proc.executableURL  = URL(fileURLWithPath: executablePath)
+        proc.arguments      = args
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError  = FileHandle.nullDevice
-        try? proc.run()
-        proc.waitUntilExit()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            return proc.terminationStatus
+        } catch {
+            print("[UpdateService] Failed to run \(executablePath): \(error)")
+            return -1
+        }
     }
 
     // MARK: - Homebrew Update
@@ -584,16 +673,37 @@ final class UpdateService: ObservableObject {
 
     // MARK: - Relaunch
 
+    /// Relaunches the app after an update.
+    ///
+    /// **Why not `open KeyValue.app`?**
+    /// `open` goes through Launch Services which enforces Gatekeeper.  For
+    /// ad-hoc signed (open-source) apps this triggers the "Apple cannot
+    /// verify" dialog — or worse, on macOS 14+/26, outright refusal.
+    ///
+    /// Instead we:
+    ///   1. Spawn a tiny shell watcher that waits for our PID to exit.
+    ///   2. The watcher then directly executes the **binary** inside the
+    ///      .app bundle (`Contents/MacOS/MacKeyValue`), which completely
+    ///      bypasses Launch Services / Gatekeeper.
+    ///   3. Terminate ourselves so the watcher can proceed.
     private func relaunchApp() {
-        let appURL = Bundle.main.bundleURL
+        let appURL  = Bundle.main.bundleURL
+        let binPath = appURL
+            .appendingPathComponent("Contents/MacOS/MacKeyValue")
+            .path
 
-        // Use a small shell script to wait for our process to exit, then open.
-        // This avoids the race condition where `open` tries to connect to the
-        // still-running instance.
         let pid = ProcessInfo.processInfo.processIdentifier
+
+        // The script:
+        //   • Waits for the current process to exit (polling kill -0).
+        //   • Strips quarantine one more time (belt & suspenders).
+        //   • Launches the binary directly — no Launch Services / Gatekeeper.
+        //   • Uses `disown` so the shell doesn't wait for the child.
         let script = """
         while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done
-        open "\(appURL.path)"
+        /usr/bin/xattr -cr "\(appURL.path)" 2>/dev/null
+        "\(binPath)" &
+        disown
         """
 
         let proc = Process()
