@@ -1829,6 +1829,7 @@ struct AboutSheet: View {
                             Text({
                                 if case .homebrew = updater.installMethod { return "通过 Homebrew 更新" }
                                 if case .sourceTree = updater.installMethod { return "通过 Git 更新" }
+                                if case .appBundle = updater.installMethod { return "下载并安装更新" }
                                 return "前往下载页"
                             }())
                                 .bold()
@@ -1839,6 +1840,41 @@ struct AboutSheet: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
                     .controlSize(.regular)
+                }
+
+            case .downloading(let version, let progress):
+                VStack(spacing: 6) {
+                    HStack(spacing: 8) {
+                        ProgressView(value: progress)
+                            .progressViewStyle(.linear)
+                        Text("\(Int(progress * 100))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                    HStack {
+                        Text("正在下载 v\(version)…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            updater.cancelDownload()
+                        } label: {
+                            Label("取消", systemImage: "xmark.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+            case .installing(let version):
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在安装 v\(version)…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
                 }
 
             case .updating:
