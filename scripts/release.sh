@@ -613,7 +613,7 @@ if ! $SKIP_BUILD; then
         fail "Build script not found: $BUILD_SCRIPT"
     fi
 
-    local build_flags=(--ci --dmg)
+    build_flags=(--ci --dmg)
     $UNIVERSAL && build_flags+=(--universal)
 
     if $DRY_RUN; then
