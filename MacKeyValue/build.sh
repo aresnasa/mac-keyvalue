@@ -348,6 +348,20 @@ for bundle in .build/${SWIFT_CONFIG}/*.bundle; do
 done
 [ $BUNDLE_COUNT -gt 0 ] && info "Copied $BUNDLE_COUNT resource bundle(s)"
 
+# ── Runtime PNG/JPG resource files ──
+# Copy image files that are loaded at runtime via Bundle.main (e.g. donate QR
+# codes).  Skips marketing-only assets (social-preview.*) that are not needed
+# inside the .app bundle.
+RESOURCE_COUNT=0
+for resfile in ./Resources/*.png ./Resources/*.jpg; do
+    [ -f "$resfile" ] || continue
+    fname="$(basename "$resfile")"
+    case "$fname" in social-preview*) continue ;; esac   # marketing-only, skip
+    cp "$resfile" "$RESOURCES_DIR/$fname"
+    RESOURCE_COUNT=$((RESOURCE_COUNT + 1))
+done
+[ $RESOURCE_COUNT -gt 0 ] && info "Copied $RESOURCE_COUNT image resource(s) → bundle"
+
 success "App bundle assembled"
 
 # ══════════════════════════════════════════════════════════════════════════════
