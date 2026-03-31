@@ -80,6 +80,7 @@ DO_ICONS=false
 DO_CLEAN=false
 DO_CI=false
 DO_HELP=false
+BUILD_UNIVERSAL=false   # --universal: build arm64 + x86_64 and combine with lipo
 
 for arg in "$@"; do
     case "$arg" in
@@ -90,6 +91,7 @@ for arg in "$@"; do
         --icons|-i)        DO_ICONS=true ;;
         --clean|-c)        DO_CLEAN=true ;;
         --ci)              DO_CI=true; DO_DMG=true ;;
+        --universal)       BUILD_UNIVERSAL=true ;;
         --help|-h)         DO_HELP=true ;;
         *)
             echo -e "${RED}Unknown argument: $arg${RESET}"
@@ -114,6 +116,7 @@ if $DO_HELP; then
 ║    ./build.sh --icons      Regenerate icons only             ║
 ║    ./build.sh --clean      Remove build artefacts            ║
 ║    ./build.sh --ci         CI mode (build + DMG, no prompts) ║
+║    ./build.sh --universal  Universal binary (arm64 + x86_64) ║
 ║    ./build.sh --help       This help                         ║
 ║                                                              ║
 ║  ENVIRONMENT                                                 ║
@@ -195,25 +198,52 @@ echo -e "  ${DIM}CI mode:   ${RESET}$(${DO_CI} && echo "yes" || echo "no")"
 #  STEP 1: Swift Build
 # ══════════════════════════════════════════════════════════════════════════════
 
-step "Building with Swift Package Manager ($CONFIG)"
-
 SWIFT_CONFIG="release"
 [ "$CONFIG" = "Debug" ] && SWIFT_CONFIG="debug"
 
-swift build -c "$SWIFT_CONFIG" 2>&1 | while IFS= read -r line; do
-    # Show only interesting lines during build
-    case "$line" in
-        *"Compiling"*|*"Linking"*|*"Build complete"*|*error*|*warning*)
-            info "$line"
-            ;;
-    esac
-done
+if $BUILD_UNIVERSAL; then
+    step "Building Universal Binary (arm64 + x86_64)"
 
-EXECUTABLE=".build/${SWIFT_CONFIG}/${EXECUTABLE_NAME}"
-if [ ! -f "$EXECUTABLE" ]; then
-    fail "Build failed: executable not found at $EXECUTABLE"
+    info "Compiling arm64 slice…"
+    swift build -c "$SWIFT_CONFIG" --triple arm64-apple-macosx${MIN_MACOS} 2>&1 | while IFS= read -r line; do
+        case "$line" in
+            *"Compiling"*|*"Linking"*|*"Build complete"*|*error*|*warning*)
+                info "  [arm64] $line" ;;
+        esac
+    done
+    ARM_EXEC=".build/arm64-apple-macosx/release/${EXECUTABLE_NAME}"
+    [ ! -f "$ARM_EXEC" ] && fail "arm64 build failed: $ARM_EXEC not found"
+    success "arm64 slice complete"
+
+    info "Cross-compiling x86_64 slice…"
+    swift build -c "$SWIFT_CONFIG" --triple x86_64-apple-macosx${MIN_MACOS} 2>&1 | while IFS= read -r line; do
+        case "$line" in
+            *"Compiling"*|*"Linking"*|*"Build complete"*|*error*|*warning*)
+                info "  [x86_64] $line" ;;
+        esac
+    done
+    X86_EXEC=".build/x86_64-apple-macosx/release/${EXECUTABLE_NAME}"
+    [ ! -f "$X86_EXEC" ] && fail "x86_64 build failed: $X86_EXEC not found"
+    success "x86_64 slice complete"
+
+    EXECUTABLE=".build/release/${EXECUTABLE_NAME}-universal"
+    lipo -create "$ARM_EXEC" "$X86_EXEC" -output "$EXECUTABLE"
+    ARCHS_IN_BINARY="$(lipo -archs "$EXECUTABLE")"
+    success "Universal binary created (${ARCHS_IN_BINARY})"
+else
+    step "Building with Swift Package Manager ($CONFIG)"
+
+    swift build -c "$SWIFT_CONFIG" 2>&1 | while IFS= read -r line; do
+        case "$line" in
+            *"Compiling"*|*"Linking"*|*"Build complete"*|*error*|*warning*)
+                info "$line" ;;
+        esac
+    done
+
+    EXECUTABLE=".build/${SWIFT_CONFIG}/${EXECUTABLE_NAME}"
+    [ ! -f "$EXECUTABLE" ] && fail "Build failed: executable not found at $EXECUTABLE"
+    success "Swift build complete"
 fi
-success "Swift build complete"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  STEP 2: Assemble .app bundle
@@ -475,10 +505,14 @@ if $DO_DMG; then
 
     mkdir -p "$DIST_DIR"
 
-    # Determine architecture
-    ARCH="$(uname -m)"
-    [ "$ARCH" = "x86_64" ] && ARCH="intel"
-    [ "$ARCH" = "arm64" ]  && ARCH="apple-silicon"
+    # Determine architecture label for the DMG filename
+    if $BUILD_UNIVERSAL; then
+        ARCH="universal"
+    else
+        ARCH="$(uname -m)"
+        [ "$ARCH" = "x86_64" ] && ARCH="intel"
+        [ "$ARCH" = "arm64" ]  && ARCH="apple-silicon"
+    fi
 
     DMG_NAME="${APP_NAME}-${VERSION}-${ARCH}.dmg"
     DMG_PATH="${DIST_DIR}/${DMG_NAME}"

@@ -76,19 +76,28 @@ info()    { echo -e "  ${DIM}$1${RESET}"; }
 verify_dmgs_from_github() {
     local tag="$1" tmpdir="$2"
 
-    HAS_ARM=false
-    HAS_INTEL=false
-    SHA256_ARM=""
-    SHA256_INTEL=""
+    HAS_UNIVERSAL=false; SHA256_UNIVERSAL=""
+    HAS_ARM=false;       SHA256_ARM=""
+    HAS_INTEL=false;     SHA256_INTEL=""
 
+    local url_univ="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${tag}/${APP_NAME}-${VERSION}-universal.dmg"
     local url_arm="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${tag}/${APP_NAME}-${VERSION}-apple-silicon.dmg"
     local url_intel="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${tag}/${APP_NAME}-${VERSION}-intel.dmg"
+
+    info "Downloading universal DMG from GitHub Release…"
+    if curl -fsSL --progress-bar -o "${tmpdir}/universal.dmg" "$url_univ" 2>&1; then
+        SHA256_UNIVERSAL="$(shasum -a 256 "${tmpdir}/universal.dmg" | awk '{print $1}')"
+        HAS_UNIVERSAL=true
+        success "SHA256 (universal): $SHA256_UNIVERSAL"
+    else
+        warn "Universal DMG not found in release ${tag} — checking arch-specific DMGs"
+    fi
 
     info "Downloading ARM DMG from GitHub Release…"
     if curl -fsSL --progress-bar -o "${tmpdir}/arm.dmg" "$url_arm" 2>&1; then
         SHA256_ARM="$(shasum -a 256 "${tmpdir}/arm.dmg" | awk '{print $1}')"
         HAS_ARM=true
-        success "SHA256 (arm64):  $SHA256_ARM"
+        success "SHA256 (arm64):    $SHA256_ARM"
     else
         warn "ARM DMG not found in release ${tag} — on_arm block will be omitted"
     fi
@@ -97,12 +106,12 @@ verify_dmgs_from_github() {
     if curl -fsSL --progress-bar -o "${tmpdir}/intel.dmg" "$url_intel" 2>&1; then
         SHA256_INTEL="$(shasum -a 256 "${tmpdir}/intel.dmg" | awk '{print $1}')"
         HAS_INTEL=true
-        success "SHA256 (x86_64): $SHA256_INTEL"
+        success "SHA256 (x86_64):   $SHA256_INTEL"
     else
         warn "Intel DMG not found in release ${tag} — on_intel block will be omitted"
     fi
 
-    if ! $HAS_ARM && ! $HAS_INTEL; then
+    if ! $HAS_UNIVERSAL && ! $HAS_ARM && ! $HAS_INTEL; then
         fail "No DMGs found in GitHub Release ${tag}. Is the release published?"
     fi
 }
@@ -118,49 +127,10 @@ verify_dmgs_from_github() {
 #                GITHUB_OWNER  GITHUB_REPO  APP_NAME
 # ══════════════════════════════════════════════════════════════════════════════
 build_cask_content() {
-    # Build only the blocks whose DMGs actually exist
-    local arch_section=""
-
-    # Stanza grouping rules (verified empirically with brew style):
-    #   • version and on_arm/on_intel are DIFFERENT groups → blank line between them
-    #     (the blank line comes from the heredoc, not from arch_section itself)
-    #   • sha256 and url WITHIN each block are DIFFERENT sub-groups → blank line between them
-    #   • on_arm and on_intel are the SAME group → NO blank line between them
-    if $HAS_ARM; then
-        arch_section+="  on_arm do
-    sha256 \"${SHA256_ARM}\"
-
-    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-apple-silicon.dmg\"
-  end"
-    fi
-
-    if $HAS_INTEL; then
-        # Same group as on_arm → separate with a single newline only (no blank line)
-        [ -n "$arch_section" ] && arch_section+=$'\n'
-        arch_section+="  on_intel do
-    sha256 \"${SHA256_INTEL}\"
-
-    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-intel.dmg\"
-  end"
-    fi
-
-    # NOTE: bash expands ${...} variables; Ruby #{...} tokens have no leading $
-    # so they pass through the heredoc unchanged — exactly what Homebrew needs.
-    #
-    # Style rules baked into this template (no brew style --fix corrections needed):
-    #   • version + on_arm/on_intel are in the same stanza group → no blank line between them
-    #   • desc contains no Unicode emojis (Cask/Desc rule)
-    #   • empty line after each `next unless` guard clause
-    #   • zap trash array is alphabetically ordered
-    cat <<CASK_EOF
-cask "keyvalue" do
-  version "${VERSION}"
-
-${arch_section}
-
-  name "${APP_NAME}"
-  desc "KV - Secure password & key-value manager"
-  homepage "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+    # ── Common bottom section (postflight / zap / caveats) ────────────────
+    # Captured once so it can be shared between the universal and arch branches.
+    local bottom
+    bottom="$(cat <<BOTTOM_EOF
 
   livecheck do
     url :url
@@ -229,7 +199,62 @@ ${arch_section}
       codesign --force --sign - --timestamp=none /Applications/${APP_NAME}.app
   EOS
 end
+BOTTOM_EOF
+)"
+
+    if $HAS_UNIVERSAL; then
+        # ── Universal binary template ──────────────────────────────────────
+        # Stanza grouping rules for top-level (non-arch-block) casks:
+        #   • version + sha256 → SAME group → no blank line between them
+        #   • sha256 + url     → DIFFERENT groups → one blank line between them
+        #   • url + name + desc + homepage → SAME group → no blank lines between them
+        cat <<CASK_EOF
+cask "keyvalue" do
+  version "${VERSION}"
+  sha256 "${SHA256_UNIVERSAL}"
+
+  url "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-universal.dmg"
+  name "${APP_NAME}"
+  desc "KV - Secure password & key-value manager"
+  homepage "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+${bottom}
 CASK_EOF
+    else
+        # ── Arch-specific template (on_arm / on_intel) ─────────────────────
+        # Stanza grouping rules:
+        #   • version + on_arm/on_intel → DIFFERENT groups → blank line between them
+        #   • on_arm and on_intel       → SAME group → no blank line between them
+        #   • inside each block: sha256 + url → DIFFERENT sub-groups → blank line between them
+        #   • last arch block + name    → DIFFERENT groups → blank line between them
+        local arch_section=""
+        if $HAS_ARM; then
+            arch_section+="  on_arm do
+    sha256 \"${SHA256_ARM}\"
+
+    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-apple-silicon.dmg\"
+  end"
+        fi
+        if $HAS_INTEL; then
+            [ -n "$arch_section" ] && arch_section+=$'\n'
+            arch_section+="  on_intel do
+    sha256 \"${SHA256_INTEL}\"
+
+    url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-intel.dmg\"
+  end"
+        fi
+
+        cat <<CASK_EOF
+cask "keyvalue" do
+  version "${VERSION}"
+
+${arch_section}
+
+  name "${APP_NAME}"
+  desc "KV - Secure password & key-value manager"
+  homepage "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+${bottom}
+CASK_EOF
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -332,6 +357,7 @@ SKIP_BUILD=false
 PRERELEASE=false
 FORCE=false
 FIX_SHA=false
+UNIVERSAL=false   # --universal: build & publish a single arm64+x86_64 fat DMG
 
 show_help() {
     cat <<'EOF'
@@ -352,6 +378,7 @@ show_help() {
 ║    --skip-build    Skip DMG build (use existing dist/)       ║
 ║    --fix-sha       Re-download DMGs & fix Cask SHA only      ║
 ║    --force         Force release even if tag exists          ║
+║    --universal     Build & publish universal (arm64+x86_64)  ║
 ║    --help          Show this help                            ║
 ║                                                              ║
 ║  EXAMPLES                                                    ║
@@ -384,6 +411,7 @@ for arg in "$@"; do
         --skip-build) SKIP_BUILD=true ;;
         --fix-sha)    FIX_SHA=true; SKIP_BUILD=true ;;
         --force)      FORCE=true ;;
+        --universal)  UNIVERSAL=true ;;
         --help|-h)    show_help ;;
         -*)
             echo -e "${RED}Unknown option: $arg${RESET}"
@@ -423,19 +451,30 @@ fi
 
 TAG="v${VERSION}"
 ARCH="$(uname -m)"
-[ "$ARCH" = "x86_64" ] && ARCH_NAME="intel" || ARCH_NAME="apple-silicon"
+if $UNIVERSAL; then
+    ARCH_NAME="universal"
+else
+    [ "$ARCH" = "x86_64" ] && ARCH_NAME="intel" || ARCH_NAME="apple-silicon"
+fi
 DMG_NAME="${APP_NAME}-${VERSION}-${ARCH_NAME}.dmg"
 DMG_PATH="${DIST_DIR}/${DMG_NAME}"
 SHA_PATH="${DMG_PATH}.sha256"
 
-# "Other" arch — cross-compiled or copied from another machine into dist/
-if [ "$ARCH_NAME" = "apple-silicon" ]; then
-    OTHER_ARCH_NAME="intel"
+# For non-universal builds: the "other" arch DMG may exist if cross-compiled
+# or copied from another machine.  Not used for universal builds.
+if ! $UNIVERSAL; then
+    if [ "$ARCH_NAME" = "apple-silicon" ]; then
+        OTHER_ARCH_NAME="intel"
+    else
+        OTHER_ARCH_NAME="apple-silicon"
+    fi
+    OTHER_DMG_NAME="${APP_NAME}-${VERSION}-${OTHER_ARCH_NAME}.dmg"
+    OTHER_DMG_PATH="${DIST_DIR}/${OTHER_DMG_NAME}"
 else
-    OTHER_ARCH_NAME="apple-silicon"
+    OTHER_ARCH_NAME=""
+    OTHER_DMG_NAME=""
+    OTHER_DMG_PATH=""
 fi
-OTHER_DMG_NAME="${APP_NAME}-${VERSION}-${OTHER_ARCH_NAME}.dmg"
-OTHER_DMG_PATH="${DIST_DIR}/${OTHER_DMG_NAME}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  --fix-sha: Re-download DMGs, recompute SHA256, update the tap formula.
@@ -462,7 +501,11 @@ if $FIX_SHA; then
 
     step "Updating Homebrew tap"
     COMMIT_MSG="Fix SHA256 for keyvalue ${VERSION}"
-    if $HAS_ARM && $HAS_INTEL; then
+    if $HAS_UNIVERSAL; then
+        COMMIT_MSG+=" (universal)
+
+universal: ${SHA256_UNIVERSAL}"
+    elif $HAS_ARM && $HAS_INTEL; then
         COMMIT_MSG+="
 
 arm64:  ${SHA256_ARM}
@@ -482,8 +525,9 @@ x86_64: ${SHA256_INTEL}"
     echo ""
     echo -e "${GREEN}${BOLD}  ✅  SHA256 fixed for ${TAG}${RESET}"
     echo ""
-    $HAS_ARM   && echo -e "  ${DIM}arm64:${RESET}  ${SHA256_ARM}"
-    $HAS_INTEL && echo -e "  ${DIM}x86_64:${RESET} ${SHA256_INTEL}"
+    $HAS_UNIVERSAL && echo -e "  ${DIM}universal:${RESET} ${SHA256_UNIVERSAL}"
+    $HAS_ARM       && echo -e "  ${DIM}arm64:${RESET}     ${SHA256_ARM}"
+    $HAS_INTEL     && echo -e "  ${DIM}x86_64:${RESET}    ${SHA256_INTEL}"
     echo ""
     echo -e "  ${DIM}To install / upgrade:${RESET}"
     echo -e "    brew tap ${GITHUB_OWNER}/tap && brew install --cask keyvalue"
@@ -569,11 +613,14 @@ if ! $SKIP_BUILD; then
         fail "Build script not found: $BUILD_SCRIPT"
     fi
 
+    local build_flags=(--ci --dmg)
+    $UNIVERSAL && build_flags+=(--universal)
+
     if $DRY_RUN; then
-        info "[DRY RUN] Would run: MARKETING_VERSION=${VERSION} bash build.sh --ci --dmg"
+        info "[DRY RUN] Would run: MARKETING_VERSION=${VERSION} bash build.sh ${build_flags[*]}"
     else
         cd "${PROJECT_ROOT}/MacKeyValue"
-        MARKETING_VERSION="$VERSION" bash build.sh --ci --dmg
+        MARKETING_VERSION="$VERSION" bash build.sh "${build_flags[@]}"
         cd "$PROJECT_ROOT"
 
         if [ ! -f "$DMG_PATH" ]; then
@@ -706,19 +753,20 @@ else
         gh release delete "$TAG" --repo "${GITHUB_OWNER}/${GITHUB_REPO}" --yes 2>/dev/null || true
     fi
 
-    # Collect assets: primary arch DMG + optional checksum + optional other arch
+    # Collect assets: primary DMG + optional checksum + optional other arch
     ASSETS=("$DMG_PATH")
     [ -f "$SHA_PATH" ] && ASSETS+=("$SHA_PATH")
 
-    if [ -f "$OTHER_DMG_PATH" ]; then
+    if $UNIVERSAL; then
+        info "Universal DMG covers both arm64 and x86_64 — no separate arch DMGs needed"
+    elif [ -n "$OTHER_DMG_PATH" ] && [ -f "$OTHER_DMG_PATH" ]; then
         ASSETS+=("$OTHER_DMG_PATH")
         OTHER_SHA_PATH="${OTHER_DMG_PATH}.sha256"
         [ -f "$OTHER_SHA_PATH" ] && ASSETS+=("$OTHER_SHA_PATH")
         info "Including other-arch DMG: $OTHER_DMG_NAME"
     else
-        warn "Other-arch DMG not found at: $OTHER_DMG_PATH"
-        warn "Cask will be ${ARCH_NAME}-only until the other DMG is uploaded."
-        warn "Cross-compile or copy the DMG to dist/ and re-run with --skip-build."
+        warn "Other-arch DMG not found — cask will be ${ARCH_NAME}-only."
+        warn "Use --universal to build both architectures in one step."
     fi
 
     gh release create "$TAG" \
@@ -742,16 +790,22 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
 
     if $DRY_RUN; then
         # Simulate the arch flags based on what we plan to upload
-        HAS_ARM=false
-        HAS_INTEL=false
-        SHA256_ARM="<verified-after-upload>"
-        SHA256_INTEL="<verified-after-upload>"
-        [ "$ARCH_NAME" = "apple-silicon" ] && HAS_ARM=true
-        [ "$ARCH_NAME" = "intel" ]         && HAS_INTEL=true
-        [ -f "$OTHER_DMG_PATH" ] && {
-            [ "$OTHER_ARCH_NAME" = "apple-silicon" ] && HAS_ARM=true
-            [ "$OTHER_ARCH_NAME" = "intel" ]         && HAS_INTEL=true
-        }
+        HAS_UNIVERSAL=false; SHA256_UNIVERSAL=""
+        HAS_ARM=false;       SHA256_ARM=""
+        HAS_INTEL=false;     SHA256_INTEL=""
+        if $UNIVERSAL; then
+            HAS_UNIVERSAL=true
+            SHA256_UNIVERSAL="<verified-after-upload>"
+        else
+            SHA256_ARM="<verified-after-upload>"
+            SHA256_INTEL="<verified-after-upload>"
+            [ "$ARCH_NAME" = "apple-silicon" ] && HAS_ARM=true
+            [ "$ARCH_NAME" = "intel" ]         && HAS_INTEL=true
+            [ -n "$OTHER_DMG_PATH" ] && [ -f "$OTHER_DMG_PATH" ] && {
+                [ "$OTHER_ARCH_NAME" = "apple-silicon" ] && HAS_ARM=true
+                [ "$OTHER_ARCH_NAME" = "intel" ]         && HAS_INTEL=true
+            }
+        fi
     else
         VTMPDIR="$(mktemp -d)"
         verify_dmgs_from_github "$TAG" "$VTMPDIR"
@@ -762,7 +816,12 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
 
     # Build a descriptive commit message showing the actual SHA values
     BREW_COMMIT_MSG="Update keyvalue to ${VERSION}"
-    if $HAS_ARM && $HAS_INTEL; then
+    if $HAS_UNIVERSAL; then
+        BREW_COMMIT_MSG+=" (universal)
+
+universal: ${SHA256_UNIVERSAL}
+Release: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/${TAG}"
+    elif $HAS_ARM && $HAS_INTEL; then
         BREW_COMMIT_MSG+="
 
 arm64:  ${SHA256_ARM}
@@ -819,16 +878,19 @@ if ! $DRY_RUN; then
         echo -e "  ${DIM}Homebrew Upgrade:${RESET}"
         echo -e "    brew update && brew upgrade --cask keyvalue"
         echo ""
-        if $HAS_ARM && $HAS_INTEL; then
-            echo -e "  ${DIM}Architectures published:${RESET} arm64 + x86_64"
-            echo -e "  ${DIM}SHA256 (arm64):${RESET}  ${SHA256_ARM}"
-            echo -e "  ${DIM}SHA256 (x86_64):${RESET} ${SHA256_INTEL}"
+        if $HAS_UNIVERSAL; then
+            echo -e "  ${DIM}Architecture:${RESET}        universal (arm64 + x86_64)"
+            echo -e "  ${DIM}SHA256 (universal):${RESET}  ${SHA256_UNIVERSAL}"
+        elif $HAS_ARM && $HAS_INTEL; then
+            echo -e "  ${DIM}Architectures:${RESET}       arm64 + x86_64"
+            echo -e "  ${DIM}SHA256 (arm64):${RESET}      ${SHA256_ARM}"
+            echo -e "  ${DIM}SHA256 (x86_64):${RESET}     ${SHA256_INTEL}"
         elif $HAS_ARM; then
-            echo -e "  ${DIM}Architectures published:${RESET} arm64 only"
-            echo -e "  ${DIM}SHA256 (arm64):${RESET} ${SHA256_ARM}"
+            echo -e "  ${DIM}Architecture:${RESET}        arm64 only"
+            echo -e "  ${DIM}SHA256 (arm64):${RESET}      ${SHA256_ARM}"
         else
-            echo -e "  ${DIM}Architectures published:${RESET} x86_64 only"
-            echo -e "  ${DIM}SHA256 (x86_64):${RESET} ${SHA256_INTEL}"
+            echo -e "  ${DIM}Architecture:${RESET}        x86_64 only"
+            echo -e "  ${DIM}SHA256 (x86_64):${RESET}     ${SHA256_INTEL}"
         fi
         echo ""
     else
