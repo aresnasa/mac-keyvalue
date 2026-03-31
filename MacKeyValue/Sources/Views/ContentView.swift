@@ -1770,7 +1770,7 @@ struct AboutSheet: View {
         }
         .padding(.horizontal, 32)
         .padding(.vertical, 20)
-        .frame(width: 480, height: showDonate ? 560 : 540)
+        .frame(width: 480, height: showDonate ? 500 : 540)
         .animation(.easeInOut(duration: 0.3), value: showDonate)
     }
 
@@ -2026,19 +2026,12 @@ struct AboutSheet: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            // ── Two QR codes side by side ─────────────────────────────
-            HStack(spacing: 24) {
-                donateQRCard(
-                    named: "donate_wechat",
-                    label: "微信",
-                    accentColor: Color(red: 0.07, green: 0.75, blue: 0.24)
-                )
-                donateQRCard(
-                    named: "donate_alipay",
-                    label: "支付宝",
-                    accentColor: Color(red: 0.02, green: 0.56, blue: 0.98)
-                )
-            }
+            // ── Alipay QR code ────────────────────────────────────────
+            donateQRCard(
+                named: "donate_alipay",
+                label: "支付宝",
+                accentColor: Color(red: 0.02, green: 0.56, blue: 0.98)
+            )
 
             Text("扫码即可赞赏，感谢支持！")
                 .font(.caption2)
