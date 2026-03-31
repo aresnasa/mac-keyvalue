@@ -121,23 +121,37 @@ build_cask_content() {
     # Build only the blocks whose DMGs actually exist
     local arch_section=""
 
+    # Stanza grouping rules (verified empirically with brew style):
+    #   • version and on_arm/on_intel are DIFFERENT groups → blank line between them
+    #     (the blank line comes from the heredoc, not from arch_section itself)
+    #   • sha256 and url WITHIN each block are DIFFERENT sub-groups → blank line between them
+    #   • on_arm and on_intel are the SAME group → NO blank line between them
     if $HAS_ARM; then
         arch_section+="  on_arm do
     sha256 \"${SHA256_ARM}\"
+
     url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-apple-silicon.dmg\"
   end"
     fi
 
     if $HAS_INTEL; then
+        # Same group as on_arm → separate with a single newline only (no blank line)
         [ -n "$arch_section" ] && arch_section+=$'\n'
         arch_section+="  on_intel do
     sha256 \"${SHA256_INTEL}\"
+
     url \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v#{version}/${APP_NAME}-#{version}-intel.dmg\"
   end"
     fi
 
     # NOTE: bash expands ${...} variables; Ruby #{...} tokens have no leading $
     # so they pass through the heredoc unchanged — exactly what Homebrew needs.
+    #
+    # Style rules baked into this template (no brew style --fix corrections needed):
+    #   • version + on_arm/on_intel are in the same stanza group → no blank line between them
+    #   • desc contains no Unicode emojis (Cask/Desc rule)
+    #   • empty line after each `next unless` guard clause
+    #   • zap trash array is alphabetically ordered
     cat <<CASK_EOF
 cask "keyvalue" do
   version "${VERSION}"
@@ -145,7 +159,7 @@ cask "keyvalue" do
 ${arch_section}
 
   name "${APP_NAME}"
-  desc "K🔒V — Secure password & key-value manager"
+  desc "KV - Secure password & key-value manager"
   homepage "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
 
   livecheck do
@@ -173,6 +187,7 @@ ${arch_section}
     end
     Dir.glob("#{appdir}/${APP_NAME}.app/Contents/**/*.bundle").each do |nested|
       next unless File.exist?(File.join(nested, "Info.plist"))
+
       system_command "/usr/bin/codesign",
                      args: ["--force", "--sign", "-", "--timestamp=none", nested],
                      sudo: false
@@ -197,8 +212,8 @@ ${arch_section}
 
   zap trash: [
     "~/Library/Application Support/com.aresnasa.mackeyvalue",
-    "~/Library/Preferences/com.aresnasa.mackeyvalue.plist",
     "~/Library/Caches/com.aresnasa.mackeyvalue",
+    "~/Library/Preferences/com.aresnasa.mackeyvalue.plist",
   ]
 
   caveats <<~EOS
