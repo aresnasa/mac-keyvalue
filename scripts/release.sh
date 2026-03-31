@@ -228,7 +228,7 @@ if $FIX_SHA; then
   end
 
   name \"${APP_NAME}\"
-  desc \"K🔒V — Secure password & key-value manager for macOS\"
+  desc \"K🔒V — Secure password & key-value manager\"
   homepage \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}\"
 
   livecheck do
@@ -676,7 +676,7 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
   end
 
   name \"${APP_NAME}\"
-  desc \"K🔒V — Secure password & key-value manager for macOS\"
+  desc \"K🔒V — Secure password & key-value manager\"
   homepage \"https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}\"
 
   livecheck do
