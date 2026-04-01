@@ -51,6 +51,8 @@ enum ActiveSheet: Identifiable, Equatable {
     case quickSearch
     case about
     case checkUpdate
+    case importData
+    case exportData
 
     var id: String {
         switch self {
@@ -64,6 +66,8 @@ enum ActiveSheet: Identifiable, Equatable {
         case .quickSearch: return "quickSearch"
         case .about: return "about"
         case .checkUpdate: return "checkUpdate"
+        case .importData: return "importData"
+        case .exportData: return "exportData"
         }
     }
 }
@@ -383,7 +387,9 @@ final class AppViewModel: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             if let msg = notification.object as? String {
-                self?.showStatusMessage(msg, duration: 4)
+                Task { @MainActor [weak self] in
+                    self?.showStatusMessage(msg, duration: 4)
+                }
             }
         }
     }

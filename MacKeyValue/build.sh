@@ -7,6 +7,10 @@ set -euo pipefail
 #  Usage:
 #    ./build.sh                  # Build Release .app
 #    ./build.sh debug            # Build Debug .app
+#    ./build.sh --win-exe        # Build Windows EXE (on Windows host)
+#    ./build.sh --win-msi        # Build Windows MSI (on Windows host)
+#    ./build.sh --win-both       # Build Windows EXE + MSI (on Windows host)
+#    ./build.sh --win-both --win-only  # Only build Windows packages
 #    ./build.sh --run            # Build Release and launch
 #    ./build.sh --dmg            # Build Release .app + package as DMG
 #    ./build.sh --icons          # Regenerate app icons only
@@ -81,6 +85,8 @@ DO_CLEAN=false
 DO_CI=false
 DO_HELP=false
 BUILD_UNIVERSAL=false   # --universal: build arm64 + x86_64 and combine with lipo
+WIN_PACKAGE_MODE=""      # exe | msi | both
+WIN_ONLY=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -92,6 +98,10 @@ for arg in "$@"; do
         --clean|-c)        DO_CLEAN=true ;;
         --ci)              DO_CI=true; DO_DMG=true ;;
         --universal)       BUILD_UNIVERSAL=true ;;
+        --win-exe)         WIN_PACKAGE_MODE="exe" ;;
+        --win-msi)         WIN_PACKAGE_MODE="msi" ;;
+        --win-both)        WIN_PACKAGE_MODE="both" ;;
+        --win-only)        WIN_ONLY=true ;;
         --help|-h)         DO_HELP=true ;;
         *)
             echo -e "${RED}Unknown argument: $arg${RESET}"
@@ -117,6 +127,10 @@ if $DO_HELP; then
 ║    ./build.sh --clean      Remove build artefacts            ║
 ║    ./build.sh --ci         CI mode (build + DMG, no prompts) ║
 ║    ./build.sh --universal  Universal binary (arm64 + x86_64) ║
+║    ./build.sh --win-exe    Build Windows EXE (Windows only)  ║
+║    ./build.sh --win-msi    Build Windows MSI (Windows only)  ║
+║    ./build.sh --win-both   Build Windows EXE+MSI (Windows)   ║
+║    ./build.sh --win-only   Skip macOS build, Windows only    ║
 ║    ./build.sh --help       This help                         ║
 ║                                                              ║
 ║  ENVIRONMENT                                                 ║
@@ -154,6 +168,113 @@ if $DO_ICONS; then
     exit 0
 fi
 
+# ── Windows build helpers ───────────────────────────────────────────────────
+is_windows_host() {
+        case "${OSTYPE:-}" in
+                msys*|cygwin*|win32*) return 0 ;;
+        esac
+        [ "$(uname -s 2>/dev/null || true)" = "MINGW64_NT" ] && return 0
+        [ "$(uname -s 2>/dev/null || true)" = "MINGW32_NT" ] && return 0
+        [ "${OS:-}" = "Windows_NT" ] && return 0
+        return 1
+}
+
+msi_version_from_semver() {
+        local raw="$1"
+        local base="${raw%%-*}"
+        local major minor patch
+        IFS='.' read -r major minor patch <<< "$base"
+        major="${major:-1}"
+        minor="${minor:-0}"
+        patch="${patch:-0}"
+        echo "${major}.${minor}.${patch}.0"
+}
+
+build_windows_packages() {
+        local mode="$1"
+        local version="$2"
+        local root_dir="$(cd "${SCRIPT_DIR}/.." && pwd)"
+        local win_project="${root_dir}/windows/KeyValueWin/KeyValueWin.csproj"
+        local win_dist="${root_dir}/windows/dist"
+        local publish_out="${win_dist}/publish-win-x64"
+        local exe_output="${win_dist}/KeyValueWin-${version}-win-x64.exe"
+        local msi_output="${win_dist}/KeyValueWin-${version}-win-x64.msi"
+        local wix_ver
+        wix_ver="$(msi_version_from_semver "$version")"
+
+        step "Building Windows package(s): ${mode}"
+
+        if ! is_windows_host; then
+                warn "Windows packaging skipped: current host is not Windows"
+                warn "Run this on Windows (PowerShell/Git Bash) to produce EXE/MSI"
+                return 1
+        fi
+
+        command -v dotnet >/dev/null 2>&1 || fail "dotnet not found. Install .NET SDK on Windows first."
+
+        mkdir -p "$win_dist"
+        rm -rf "$publish_out"
+
+        step "dotnet publish (win-x64 single-file EXE)"
+        dotnet publish "$win_project" \
+                -c Release \
+                -r win-x64 \
+                --self-contained true \
+                -p:PublishSingleFile=true \
+                -p:IncludeNativeLibrariesForSelfExtract=true \
+                -o "$publish_out"
+
+        [ -f "${publish_out}/KeyValueWin.exe" ] || fail "Windows EXE not produced at ${publish_out}/KeyValueWin.exe"
+        cp "${publish_out}/KeyValueWin.exe" "$exe_output"
+        success "Windows EXE ready: $(basename "$exe_output")"
+
+        if [ "$mode" = "exe" ]; then
+                return 0
+        fi
+
+        if command -v wix >/dev/null 2>&1; then
+                local wxs_file
+                wxs_file="$(mktemp -t keyvalue-installer.XXXXXX.wxs)"
+                cat > "$wxs_file" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package
+            Name="KeyValue"
+            Manufacturer="aresnasa"
+            Version="${wix_ver}"
+            UpgradeCode="A6A3AE31-F1D9-4D0D-8B92-8DCE89977821"
+            Language="1033"
+            InstallerVersion="500"
+            Scope="perMachine">
+        <MediaTemplate EmbedCab="yes" />
+
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="KeyValue">
+                <Component Id="cmpKeyValueExe" Guid="*">
+                    <File Id="filKeyValueExe" Source="${publish_out}/KeyValueWin.exe" KeyPath="yes" />
+                </Component>
+            </Directory>
+        </StandardDirectory>
+
+        <Feature Id="MainFeature" Title="KeyValue" Level="1">
+            <ComponentRef Id="cmpKeyValueExe" />
+        </Feature>
+    </Package>
+</Wix>
+EOF
+
+                step "Building MSI with WiX v4"
+                wix build "$wxs_file" -arch x64 -o "$msi_output"
+                rm -f "$wxs_file"
+                success "Windows MSI ready: $(basename "$msi_output")"
+                return 0
+        fi
+
+        warn "WiX (wix CLI) not found; MSI was not generated"
+        warn "Install WiX Toolset v4, then rerun with --win-msi or --win-both"
+        return 0
+}
+
 # ── Version detection ────────────────────────────────────────────────────────
 detect_version() {
     if [ -n "${MARKETING_VERSION:-}" ]; then
@@ -181,6 +302,16 @@ detect_build_number() {
 VERSION="$(detect_version)"
 BUILD_NUM="$(detect_build_number)"
 SIGN_ID="${SIGN_IDENTITY:--}"
+
+if [ -n "$WIN_PACKAGE_MODE" ]; then
+    if ! build_windows_packages "$WIN_PACKAGE_MODE" "$VERSION"; then
+        $WIN_ONLY && fail "Windows build failed in --win-only mode"
+        warn "Continuing with macOS build"
+    elif $WIN_ONLY; then
+        success "Windows-only build completed"
+        exit 0
+    fi
+fi
 
 # ── Banner ───────────────────────────────────────────────────────────────────
 echo ""

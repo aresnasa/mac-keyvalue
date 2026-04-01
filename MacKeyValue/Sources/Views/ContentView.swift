@@ -48,6 +48,9 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.4), value: viewModel.showAccessibilityGuide)
         .animation(.easeInOut(duration: 0.3), value: viewModel.uiMode)
+        .sheet(item: $viewModel.activeSheet) { sheet in
+            sheetContent(for: sheet)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showAccessibilityGuide)) { _ in
             // Defer to the next run-loop iteration to avoid
             // "Publishing changes from within view updates" warning.
@@ -56,6 +59,40 @@ struct ContentView: View {
                     viewModel.showAccessibilityGuide = true
                 }
             }
+        }
+    }
+
+    // MARK: - Sheet Dispatcher (shared by Compact + Full modes)
+
+    @ViewBuilder
+    func sheetContent(for sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .addEntry:
+            EntryEditorSheet(mode: .add).environmentObject(viewModel)
+        case .editEntry(let id):
+            EntryEditorSheet(mode: .edit(id)).environmentObject(viewModel)
+        case .entryDetail(let id):
+            if let entry = viewModel.storageService.getEntry(byId: id) {
+                EntryDetailSheet(entry: entry).environmentObject(viewModel)
+            }
+        case .clipboardHistory:
+            ClipboardHistorySheet().environmentObject(viewModel)
+        case .settings:
+            SettingsSheet().environmentObject(viewModel)
+        case .gistSync:
+            GistSyncSheet().environmentObject(viewModel)
+        case .hotkeySettings:
+            HotkeySettingsSheet().environmentObject(viewModel)
+        case .quickSearch:
+            QuickSearchSheet().environmentObject(viewModel)
+        case .about:
+            AboutSheet()
+        case .checkUpdate:
+            AboutSheet()
+        case .importData:
+            ImportSheet().environmentObject(viewModel)
+        case .exportData:
+            ExportSheet().environmentObject(viewModel)
         }
     }
 }
@@ -85,9 +122,6 @@ struct MainView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 toolbarItems
             }
-        }
-        .sheet(item: $viewModel.activeSheet) { sheet in
-            sheetContent(for: sheet)
         }
         .searchable(
             text: $viewModel.filterState.searchQuery,
@@ -143,6 +177,22 @@ struct MainView: View {
 
             Divider()
 
+            Button {
+                viewModel.activeSheet = .importData
+            } label: {
+                Label("导入数据...", systemImage: "square.and.arrow.down")
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+
+            Button {
+                viewModel.activeSheet = .exportData
+            } label: {
+                Label("导出数据...", systemImage: "square.and.arrow.up")
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+
+            Divider()
+
             Button("关于 MacKeyValue") {
                 viewModel.activeSheet = .about
             }
@@ -177,42 +227,6 @@ struct MainView: View {
                         .offset(x: 4, y: -4)
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func sheetContent(for sheet: ActiveSheet) -> some View {
-        switch sheet {
-        case .addEntry:
-            EntryEditorSheet(mode: .add)
-                .environmentObject(viewModel)
-        case .editEntry(let id):
-            EntryEditorSheet(mode: .edit(id))
-                .environmentObject(viewModel)
-        case .entryDetail(let id):
-            if let entry = viewModel.storageService.getEntry(byId: id) {
-                EntryDetailSheet(entry: entry)
-                    .environmentObject(viewModel)
-            }
-        case .clipboardHistory:
-            ClipboardHistorySheet()
-                .environmentObject(viewModel)
-        case .settings:
-            SettingsSheet()
-                .environmentObject(viewModel)
-        case .gistSync:
-            GistSyncSheet()
-                .environmentObject(viewModel)
-        case .hotkeySettings:
-            HotkeySettingsSheet()
-                .environmentObject(viewModel)
-        case .quickSearch:
-            QuickSearchSheet()
-                .environmentObject(viewModel)
-        case .about:
-            AboutSheet()
-        case .checkUpdate:
-            AboutSheet()
         }
     }
 }

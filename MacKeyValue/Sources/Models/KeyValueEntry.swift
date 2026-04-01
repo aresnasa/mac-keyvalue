@@ -6,7 +6,8 @@ import Foundation
 struct KeyValueEntry: Identifiable, Codable, Hashable {
     let id: UUID
     var title: String
-    var key: String
+    var key: String        // username / account  / shortcut key
+    var url: String        // website URL or host address (optional)
     var encryptedValue: Data
     var category: Category
     var tags: [String]
@@ -56,6 +57,7 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
         id: UUID = UUID(),
         title: String,
         key: String,
+        url: String = "",
         encryptedValue: Data = Data(),
         category: Category = .other,
         tags: [String] = [],
@@ -70,6 +72,7 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
         self.id = id
         self.title = title
         self.key = key
+        self.url = url
         self.encryptedValue = encryptedValue
         self.category = category
         self.tags = tags

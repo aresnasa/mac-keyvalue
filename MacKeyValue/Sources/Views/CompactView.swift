@@ -104,6 +104,30 @@ struct CompactView: View {
             }
             .buttonStyle(.plain)
             .help("切换到管理模式")
+
+            // Quick menu
+            Menu {
+                Button {
+                    viewModel.activeSheet = .importData
+                } label: {
+                    Label("导入数据…", systemImage: "square.and.arrow.down")
+                }
+                Button {
+                    viewModel.activeSheet = .exportData
+                } label: {
+                    Label("导出数据…", systemImage: "square.and.arrow.up")
+                }
+                Divider()
+                Button("设置…") { viewModel.activeSheet = .settings }
+                Button("关于") { viewModel.activeSheet = .about }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("更多选项")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

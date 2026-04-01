@@ -15,6 +15,7 @@ set -euo pipefail
 #    ./scripts/release.sh 1.2.3              # Release v1.2.3
 #    ./scripts/release.sh 1.2.3 --dry-run    # Preview without publishing
 #    ./scripts/release.sh 1.2.3 --skip-brew  # Skip Homebrew update
+#    ./scripts/release.sh 1.2.3 --windows-package both --build-windows
 #    ./scripts/release.sh 1.2.3 --fix-sha    # Re-download DMGs & fix Cask SHA only
 #    ./scripts/release.sh --help             # Show help
 #
@@ -41,6 +42,12 @@ HOMEBREW_TAP_REPO="homebrew-tap"
 APP_NAME="KeyValue"
 LOCAL_TAP_CASK="/opt/homebrew/Library/Taps/${GITHUB_OWNER}/homebrew-tap/Casks/keyvalue.rb"
 
+# ── Windows / winget ──────────────────────────────────────────────────────────
+WINGET_PACKAGE_ID="aresnasa.KeyValue"          # Publisher.AppName in winget-pkgs
+WINGET_PKGS_FORK="${GITHUB_OWNER}/winget-pkgs" # user's fork of microsoft/winget-pkgs
+WINDOWS_DIST_DIR="${PROJECT_ROOT}/windows/dist"
+WINDOWS_PROJECT="${PROJECT_ROOT}/windows/KeyValueWin/KeyValueWin.csproj"
+
 # ── Colours ──────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
     RED='\033[0;31m'
@@ -60,6 +67,121 @@ success() { echo -e "  ${GREEN}✅ $1${RESET}"; }
 warn()    { echo -e "  ${YELLOW}⚠️  $1${RESET}"; }
 fail()    { echo -e "  ${RED}❌ $1${RESET}"; exit 1; }
 info()    { echo -e "  ${DIM}$1${RESET}"; }
+
+is_windows_host() {
+    case "${OSTYPE:-}" in
+        msys*|cygwin*|win32*) return 0 ;;
+    esac
+    [ "$(uname -s 2>/dev/null || true)" = "MINGW64_NT" ] && return 0
+    [ "$(uname -s 2>/dev/null || true)" = "MINGW32_NT" ] && return 0
+    [ "${OS:-}" = "Windows_NT" ] && return 0
+    return 1
+}
+
+msi_version_from_semver() {
+    local raw="$1"
+    local base="${raw%%-*}"
+    local major minor patch
+    IFS='.' read -r major minor patch <<< "$base"
+    major="${major:-1}"
+    minor="${minor:-0}"
+    patch="${patch:-0}"
+    echo "${major}.${minor}.${patch}.0"
+}
+
+resolve_windows_asset_path() {
+    local expected="$1"
+    local fallback="$2"
+    if [ -f "$expected" ]; then
+        echo "$expected"
+        return 0
+    fi
+    if [ -f "$fallback" ]; then
+        cp "$fallback" "$expected"
+        echo "$expected"
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+build_windows_packages_local() {
+    local mode="$1"
+    local version="$2"
+    local publish_out="${WINDOWS_DIST_DIR}/publish-win-x64"
+    local exe_target="${WINDOWS_DIST_DIR}/KeyValueWin-${version}-win-x64.exe"
+    local msi_target="${WINDOWS_DIST_DIR}/KeyValueWin-${version}-win-x64.msi"
+    local wix_ver
+    wix_ver="$(msi_version_from_semver "$version")"
+
+    if ! is_windows_host; then
+        warn "--build-windows enabled, but current host is not Windows; skipping local Windows build"
+        return 1
+    fi
+
+    command -v dotnet >/dev/null 2>&1 || fail "dotnet not found. Install .NET SDK first."
+    mkdir -p "$WINDOWS_DIST_DIR"
+    rm -rf "$publish_out"
+
+    step "Building Windows EXE (dotnet publish)"
+    dotnet publish "$WINDOWS_PROJECT" \
+        -c Release \
+        -r win-x64 \
+        --self-contained true \
+        -p:PublishSingleFile=true \
+        -p:IncludeNativeLibrariesForSelfExtract=true \
+        -o "$publish_out"
+
+    [ -f "${publish_out}/KeyValueWin.exe" ] || fail "Windows EXE not found in publish output"
+    cp "${publish_out}/KeyValueWin.exe" "$exe_target"
+    success "Windows EXE built: $(basename "$exe_target")"
+
+    if [ "$mode" = "exe" ]; then
+        return 0
+    fi
+
+    if ! command -v wix >/dev/null 2>&1; then
+        warn "WiX CLI not found; MSI generation skipped"
+        warn "Install WiX Toolset v4 and rerun with --build-windows"
+        return 1
+    fi
+
+    local wxs_file
+    wxs_file="$(mktemp -t keyvalue-release-installer.XXXXXX.wxs)"
+    cat > "$wxs_file" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="KeyValue"
+      Manufacturer="aresnasa"
+      Version="${wix_ver}"
+      UpgradeCode="A6A3AE31-F1D9-4D0D-8B92-8DCE89977821"
+      Language="1033"
+      InstallerVersion="500"
+      Scope="perMachine">
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="KeyValue">
+        <Component Id="cmpKeyValueExe" Guid="*">
+          <File Id="filKeyValueExe" Source="${publish_out}/KeyValueWin.exe" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="KeyValue" Level="1">
+      <ComponentRef Id="cmpKeyValueExe" />
+    </Feature>
+  </Package>
+</Wix>
+EOF
+
+    step "Building Windows MSI (WiX v4)"
+    wix build "$wxs_file" -arch x64 -o "$msi_target"
+    rm -f "$wxs_file"
+    success "Windows MSI built: $(basename "$msi_target")"
+    return 0
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Helper: verify_dmgs_from_github
@@ -347,6 +469,175 @@ push_cask_to_tap() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  Helper: build_winget_manifests
+#
+#  Generates the three YAML manifest files required by microsoft/winget-pkgs:
+#    • <PackageId>.yaml          (version manifest)
+#    • <PackageId>.installer.yaml
+#    • <PackageId>.locale.en-US.yaml
+#
+#  Args : $1 = dest directory (manifests/<char>/<Publisher>/<App>/<version>/)
+#         $2 = Windows EXE installer URL
+#         $3 = Windows EXE SHA256
+# ══════════════════════════════════════════════════════════════════════════════
+build_winget_manifests() {
+    local dest="$1" url="$2" sha256="$3"
+    mkdir -p "$dest"
+
+    # ── version manifest ─────────────────────────────────────────────────────
+    cat > "${dest}/${WINGET_PACKAGE_ID}.yaml" <<YAML_EOF
+PackageIdentifier: ${WINGET_PACKAGE_ID}
+PackageVersion: ${VERSION}
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0
+YAML_EOF
+
+    # ── locale manifest ──────────────────────────────────────────────────────
+    cat > "${dest}/${WINGET_PACKAGE_ID}.locale.en-US.yaml" <<YAML_EOF
+PackageIdentifier: ${WINGET_PACKAGE_ID}
+PackageVersion: ${VERSION}
+PackageLocale: en-US
+Publisher: ${GITHUB_OWNER}
+PublisherUrl: https://github.com/${GITHUB_OWNER}
+PublisherSupportUrl: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues
+PackageName: ${APP_NAME}
+PackageUrl: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}
+License: MIT
+LicenseUrl: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/blob/main/LICENSE
+ShortDescription: Secure key-value manager and password vault for Windows
+Description: |-
+  KeyValue is a cross-platform secure key-value / password manager.
+  It supports AES-256-GCM encryption, import/export with Bitwarden/1Password/Chrome CSV,
+  and encrypted .mkve bundles compatible with the macOS app.
+Tags:
+  - password
+  - security
+  - clipboard
+  - keyvalue
+  - vault
+ReleaseNotesUrl: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/v${VERSION}
+ManifestType: locale
+ManifestVersion: 1.6.0
+YAML_EOF
+
+    # ── installer manifest ───────────────────────────────────────────────────
+    cat > "${dest}/${WINGET_PACKAGE_ID}.installer.yaml" <<YAML_EOF
+PackageIdentifier: ${WINGET_PACKAGE_ID}
+PackageVersion: ${VERSION}
+InstallerLocale: en-US
+InstallerType: portable
+Commands:
+  - KeyValueWin
+Installers:
+  - Architecture: x64
+    InstallerUrl: ${url}
+    InstallerSha256: ${sha256}
+ManifestType: installer
+ManifestVersion: 1.6.0
+YAML_EOF
+
+    success "winget manifests written to ${dest}"
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Helper: push_winget_pr
+#
+#  1. Clones the user's fork of microsoft/winget-pkgs.
+#  2. Writes the three manifest files.
+#  3. Commits to a new branch and pushes.
+#  4. Opens a PR against microsoft/winget-pkgs:master.
+#
+#  Args: $1 = dry_run ("true"/"false")
+#        $2 = installer URL
+#        $3 = installer SHA256
+# ══════════════════════════════════════════════════════════════════════════════
+push_winget_pr() {
+    local dry_run="$1" url="$2" sha256="$3"
+    local branch="add-${WINGET_PACKAGE_ID}-${VERSION}"
+    # Path inside the repo: manifests/<first-char>/<Publisher>/<App>/<version>/
+    local first_char="${WINGET_PACKAGE_ID:0:1}"
+    local publisher="${WINGET_PACKAGE_ID%%.*}"
+    local app_name="${WINGET_PACKAGE_ID#*.}"
+    local manifest_rel="manifests/${first_char}/${publisher}/${app_name}/${VERSION}"
+
+    if $dry_run; then
+        info "[DRY RUN] Would clone ${WINGET_PKGS_FORK} and create branch '${branch}'"
+        info "[DRY RUN] Would write manifests to ${manifest_rel}/"
+        info "[DRY RUN] Would open PR: ${WINGET_PKGS_FORK} → microsoft/winget-pkgs"
+        echo ""
+        build_winget_manifests "/dev/null" "$url" "$sha256" 2>/dev/null || true
+        # Print what manifests would look like
+        local tmpshow; tmpshow="$(mktemp -d)"
+        build_winget_manifests "$tmpshow" "$url" "$sha256"
+        for f in "${tmpshow}/"*.yaml; do
+            info "── $(basename "$f") ──"
+            while IFS= read -r line; do info "  $line"; done < "$f"
+        done
+        rm -rf "$tmpshow"
+        return 0
+    fi
+
+    # ── Ensure user fork exists ───────────────────────────────────────────────
+    if ! gh repo view "${WINGET_PKGS_FORK}" &>/dev/null; then
+        info "Fork ${WINGET_PKGS_FORK} not found — forking microsoft/winget-pkgs…"
+        gh repo fork "microsoft/winget-pkgs" --clone=false
+        info "Fork created. Waiting for GitHub to initialise it…"
+        sleep 5
+    fi
+
+    local wg_tmpdir; wg_tmpdir="$(mktemp -d)"
+
+    info "Cloning ${WINGET_PKGS_FORK} (shallow)…"
+    gh repo clone "${WINGET_PKGS_FORK}" "$wg_tmpdir" -- \
+        --depth 1 --filter=blob:none --sparse 2>&1 \
+        | while IFS= read -r line; do info "$line"; done
+
+    # Sparse-checkout: only the path we need + the manifests root
+    git -C "$wg_tmpdir" sparse-checkout set "manifests" 2>&1 | \
+        while IFS= read -r line; do info "$line"; done
+
+    # Sync fork master with upstream before branching
+    git -C "$wg_tmpdir" remote add upstream \
+        "https://github.com/microsoft/winget-pkgs.git" 2>/dev/null || true
+    git -C "$wg_tmpdir" fetch upstream master --depth 1 2>&1 | \
+        while IFS= read -r line; do info "$line"; done
+    git -C "$wg_tmpdir" checkout -b "$branch" "upstream/master" 2>&1 | \
+        while IFS= read -r line; do info "$line"; done
+
+    # Write manifests
+    build_winget_manifests "${wg_tmpdir}/${manifest_rel}" "$url" "$sha256"
+
+    # Commit
+    git -C "$wg_tmpdir" add -A
+    local commit_msg="Add ${WINGET_PACKAGE_ID} version ${VERSION}"
+    git -C "$wg_tmpdir" commit -m "$commit_msg"
+    git -C "$wg_tmpdir" push origin "$branch" 2>&1 \
+        | while IFS= read -r line; do info "$line"; done
+    success "Pushed branch '${branch}' to ${WINGET_PKGS_FORK}"
+
+    # Open PR against microsoft/winget-pkgs
+    local pr_body="## Automatic submission from release.sh
+
+**Package:** \`${WINGET_PACKAGE_ID}\`
+**Version:** \`${VERSION}\`
+**Release:** https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/v${VERSION}
+
+---
+*Generated by [KeyValue release.sh](https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/blob/main/scripts/release.sh)*"
+
+    gh pr create \
+        --repo "microsoft/winget-pkgs" \
+        --head "${GITHUB_OWNER}:${branch}" \
+        --base "master" \
+        --title "Add ${WINGET_PACKAGE_ID} ${VERSION}" \
+        --body "$pr_body" 2>&1 | while IFS= read -r line; do info "$line"; done
+
+    success "winget PR opened against microsoft/winget-pkgs"
+    rm -rf "$wg_tmpdir"
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  Argument parsing
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -358,6 +649,9 @@ PRERELEASE=false
 FORCE=false
 FIX_SHA=false
 UNIVERSAL=false   # --universal: build & publish a single arm64+x86_64 fat DMG
+SKIP_WINGET=false # --skip-winget: skip winget manifest PR
+BUILD_WINDOWS=false
+WINDOWS_PACKAGE_MODE="auto" # auto | exe | msi | both
 
 show_help() {
     cat <<'EOF'
@@ -373,26 +667,55 @@ show_help() {
 ║    With pre-release     e.g. 1.2.3-beta.1, 1.2.3-rc.1       ║
 ║                                                              ║
 ║  OPTIONS                                                     ║
-║    --dry-run       Preview all steps without executing       ║
-║    --skip-brew     Skip Homebrew formula update              ║
-║    --skip-build    Skip DMG build (use existing dist/)       ║
-║    --fix-sha       Re-download DMGs & fix Cask SHA only      ║
-║    --force         Force release even if tag exists          ║
-║    --universal     Build & publish universal (arm64+x86_64)  ║
-║    --help          Show this help                            ║
+║    --dry-run        Preview all steps without executing      ║
+║    --skip-brew      Skip Homebrew formula update             ║
+║    --skip-winget    Skip winget manifest PR                  ║
+║    --skip-build     Skip DMG build (use existing dist/)      ║
+║    --fix-sha        Re-download DMGs & fix Cask SHA only     ║
+║    --force          Force release even if tag exists         ║
+║    --universal      Build & publish universal (arm64+x86_64) ║
+║    --build-windows  Build Windows package(s) on Windows host ║
+║    --windows-package MODE (auto|exe|msi|both)               ║
+║    --help           Show this help                           ║
 ║                                                              ║
 ║  EXAMPLES                                                    ║
 ║    ./scripts/release.sh 1.0.0                                ║
 ║    ./scripts/release.sh 1.1.0 --dry-run                      ║
 ║    ./scripts/release.sh 2.0.0-beta.1 --skip-brew             ║
 ║    ./scripts/release.sh 0.1.1 --fix-sha                      ║
+║    ./scripts/release.sh 1.0.0 --skip-winget                  ║
+║    ./scripts/release.sh 1.2.0 --build-windows --windows-package both ║
+║                                                              ║
+║  RELEASE PIPELINE                                            ║
+║    STEP 1 – Build macOS DMG (via MacKeyValue/build.sh)       ║
+║    STEP 2 – Create annotated git tag & push                  ║
+║    STEP 3 – Create GitHub Release + upload assets:           ║
+║              • macOS DMG (arm64 / intel / universal)         ║
+║              • Windows EXE  windows/dist/KeyValueWin-*.exe   ║
+║              • Windows MSI  windows/dist/KeyValueWin-*.msi   ║
+║    STEP 4 – Update Homebrew tap formula (aresnasa/tap)       ║
+║    STEP 5 – Submit winget manifest PR (microsoft/winget-pkgs)║
+║                                                              ║
+║  WINDOWS EXE                                                 ║
+║    Build on a Windows machine or CI runner, then copy to:    ║
+║      windows/dist/KeyValueWin-<VERSION>-win-x64.exe          ║
+║    Command:                                                   ║
+║      dotnet publish windows/KeyValueWin/KeyValueWin.csproj \ ║
+║        -c Release -r win-x64 --self-contained \              ║
+║        -p:PublishSingleFile=true -o windows/dist/            ║
+║                                                              ║
+║  WINDOWS MSI                                                 ║
+║    Install WiX v4 on Windows and build using:                ║
+║      ./scripts/release.sh <VERSION> --build-windows --windows-package msi ║
 ║                                                              ║
 ║  NOTES                                                       ║
 ║    • Cask includes only on_arm/on_intel blocks for DMGs      ║
 ║      that actually exist in the GitHub Release.              ║
 ║    • brew style is validated & auto-fixed before commit.     ║
 ║    • brew fetch is run after push to confirm end-to-end.     ║
-║    • Pre-releases skip the Homebrew update automatically.    ║
+║    • Pre-releases skip Homebrew and winget automatically.    ║
+║    • winget PR requires your fork of microsoft/winget-pkgs;  ║
+║      gh CLI will auto-fork if it doesn't exist.              ║
 ║                                                              ║
 ║  PREREQUISITES                                               ║
 ║    • gh CLI authenticated: gh auth status                    ║
@@ -404,7 +727,14 @@ EOF
     exit 0
 }
 
+EXPECT_WINDOWS_MODE=false
 for arg in "$@"; do
+    if $EXPECT_WINDOWS_MODE; then
+        WINDOWS_PACKAGE_MODE="$arg"
+        EXPECT_WINDOWS_MODE=false
+        continue
+    fi
+
     case "$arg" in
         --dry-run)    DRY_RUN=true ;;
         --skip-brew)  SKIP_BREW=true ;;
@@ -412,6 +742,14 @@ for arg in "$@"; do
         --fix-sha)    FIX_SHA=true; SKIP_BUILD=true ;;
         --force)      FORCE=true ;;
         --universal)  UNIVERSAL=true ;;
+        --skip-winget) SKIP_WINGET=true ;;
+        --build-windows) BUILD_WINDOWS=true ;;
+        --windows-package=*)
+            WINDOWS_PACKAGE_MODE="${arg#*=}"
+            ;;
+        --windows-package)
+            EXPECT_WINDOWS_MODE=true
+            ;;
         --help|-h)    show_help ;;
         -*)
             echo -e "${RED}Unknown option: $arg${RESET}"
@@ -429,6 +767,10 @@ for arg in "$@"; do
     esac
 done
 
+if $EXPECT_WINDOWS_MODE; then
+    fail "--windows-package requires a value: auto|exe|msi|both"
+fi
+
 if [ -z "$VERSION" ]; then
     echo -e "${RED}Error: VERSION is required${RESET}"
     echo ""
@@ -443,6 +785,11 @@ fi
 if ! echo "$VERSION" | grep -qE -e '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
     fail "Invalid version format: '$VERSION' (expected: MAJOR.MINOR.PATCH[-prerelease])"
 fi
+
+case "$WINDOWS_PACKAGE_MODE" in
+    auto|exe|msi|both) ;;
+    *) fail "Invalid --windows-package value: ${WINDOWS_PACKAGE_MODE} (expected: auto|exe|msi|both)" ;;
+esac
 
 # Detect pre-release suffix
 if echo "$VERSION" | grep -qE -e '-(alpha|beta|rc|dev)'; then
@@ -475,6 +822,13 @@ else
     OTHER_DMG_NAME=""
     OTHER_DMG_PATH=""
 fi
+
+# Windows EXE — built by `dotnet publish` on a Windows runner or CI.
+# Place it at windows/dist/KeyValueWin-<version>-win-x64.exe before releasing.
+WINDOWS_EXE_NAME="KeyValueWin-${VERSION}-win-x64.exe"
+WINDOWS_EXE_PATH="${WINDOWS_DIST_DIR}/${WINDOWS_EXE_NAME}"
+WINDOWS_MSI_NAME="KeyValueWin-${VERSION}-win-x64.msi"
+WINDOWS_MSI_PATH="${WINDOWS_DIST_DIR}/${WINDOWS_MSI_NAME}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  --fix-sha: Re-download DMGs, recompute SHA256, update the tap formula.
@@ -547,8 +901,11 @@ echo -e "  ${DIM}Version:${RESET}     ${BOLD}${VERSION}${RESET} (tag: ${TAG})"
 echo -e "  ${DIM}Arch:${RESET}        ${ARCH_NAME}"
 echo -e "  ${DIM}Pre-release:${RESET} $($PRERELEASE && echo "yes" || echo "no")"
 echo -e "  ${DIM}Dry run:${RESET}     $($DRY_RUN && echo "${YELLOW}YES — no changes will be made${RESET}" || echo "no")"
-echo -e "  ${DIM}Skip build:${RESET}  $($SKIP_BUILD && echo "yes" || echo "no")"
-echo -e "  ${DIM}Skip brew:${RESET}   $($SKIP_BREW && echo "yes" || echo "no")"
+echo -e "  ${DIM}Skip build:${RESET}   $($SKIP_BUILD && echo "yes" || echo "no")"
+echo -e "  ${DIM}Skip brew:${RESET}    $($SKIP_BREW && echo "yes" || echo "no")"
+echo -e "  ${DIM}Skip winget:${RESET}  $($SKIP_WINGET && echo "yes" || echo "no")"
+echo -e "  ${DIM}Win mode:${RESET}     ${WINDOWS_PACKAGE_MODE}"
+echo -e "  ${DIM}Build win:${RESET}    $($BUILD_WINDOWS && echo "yes" || echo "no")"
 echo ""
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -650,6 +1007,37 @@ fi
 info "SHA256 (local, ${ARCH_NAME}): $LOCAL_SHA256"
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  STEP 1B: Build / resolve Windows assets
+# ══════════════════════════════════════════════════════════════════════════════
+
+WINDOWS_UPLOAD_EXE=false
+WINDOWS_UPLOAD_MSI=false
+WINDOWS_EXE_SHA256=""
+WINDOWS_MSI_SHA256=""
+
+if $BUILD_WINDOWS; then
+    step "Building Windows package(s) locally"
+    if $DRY_RUN; then
+        info "[DRY RUN] Would build Windows mode: ${WINDOWS_PACKAGE_MODE}"
+    else
+        case "$WINDOWS_PACKAGE_MODE" in
+            auto|exe) build_windows_packages_local "exe" "$VERSION" || true ;;
+            msi|both) build_windows_packages_local "both" "$VERSION" || true ;;
+        esac
+    fi
+fi
+
+# Resolve versioned asset names; fallback to non-versioned outputs in windows/dist.
+RESOLVED_WINDOWS_EXE=""
+RESOLVED_WINDOWS_MSI=""
+if [ "$WINDOWS_PACKAGE_MODE" = "auto" ] || [ "$WINDOWS_PACKAGE_MODE" = "exe" ] || [ "$WINDOWS_PACKAGE_MODE" = "both" ]; then
+    RESOLVED_WINDOWS_EXE="$(resolve_windows_asset_path "$WINDOWS_EXE_PATH" "${WINDOWS_DIST_DIR}/KeyValueWin.exe" || true)"
+fi
+if [ "$WINDOWS_PACKAGE_MODE" = "auto" ] || [ "$WINDOWS_PACKAGE_MODE" = "msi" ] || [ "$WINDOWS_PACKAGE_MODE" = "both" ]; then
+    RESOLVED_WINDOWS_MSI="$(resolve_windows_asset_path "$WINDOWS_MSI_PATH" "${WINDOWS_DIST_DIR}/KeyValueWin.msi" || true)"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  STEP 2: Create git tag
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -697,13 +1085,13 @@ RELEASE_NOTES="## ${APP_NAME} ${TAG}
 
 ### 📦 Installation
 
-#### Option 1: Homebrew (Recommended)
+#### macOS — Option 1: Homebrew (Recommended)
 \`\`\`bash
 brew tap ${GITHUB_OWNER}/tap
 brew install --cask keyvalue
 \`\`\`
 
-#### Option 2: Download DMG
+#### macOS — Option 2: Download DMG
 1. Download the \`.dmg\` file below
 2. Open the DMG and drag **KeyValue.app** into **Applications**
 3. First launch: right-click KeyValue.app → select **Open**
@@ -711,21 +1099,39 @@ brew install --cask keyvalue
 > ⚠️ This is a free, open-source app with ad-hoc signing. macOS may warn about an unverified developer on first launch — right-click → Open to bypass.
 > Alternatively: \`xattr -cr /Applications/KeyValue.app\`
 
-### 🔐 Permissions
+#### Windows — Option 3: winget
+\`\`\`powershell
+winget install ${WINGET_PACKAGE_ID}
+\`\`\`
+*(Available after the winget PR is merged into microsoft/winget-pkgs)*
+
+#### Windows — Option 4: Direct Download
+Download one of the assets below:
+- \`${WINDOWS_EXE_NAME}\` — portable single-file EXE (no installer)
+- \`${WINDOWS_MSI_NAME}\` — standard MSI installer
+
+### 🔐 Permissions (macOS)
 
 On first launch, the app will guide you through granting:
 - **Accessibility** — simulate keyboard input
 - **Input Monitoring** — create keyboard events
 
 ### 🛠️ Requirements
-- macOS 13.0+ (Ventura or later)
-- Apple Silicon (arm64) or Intel (x86_64)
+| Platform | Requirement |
+|----------|-------------|
+| macOS    | 13.0+ (Ventura or later), Apple Silicon or Intel |
+| Windows  | Windows 10 / 11, x64 |
 
 ### ⬆️ Upgrading
 
-**Homebrew:**
+**Homebrew (macOS):**
 \`\`\`bash
 brew update && brew upgrade --cask keyvalue
+\`\`\`
+
+**winget (Windows):**
+\`\`\`powershell
+winget upgrade ${WINGET_PACKAGE_ID}
 \`\`\`
 
 **DMG / Direct download** — the app auto-downloads the matching DMG, replaces itself, and restarts.
@@ -741,6 +1147,10 @@ if $DRY_RUN; then
     info "[DRY RUN] Primary asset:  $DMG_NAME"
     [ -f "$SHA_PATH" ]       && info "[DRY RUN] Checksum file: ${DMG_NAME}.sha256"
     [ -f "$OTHER_DMG_PATH" ] && info "[DRY RUN] Other arch:    $OTHER_DMG_NAME"
+    [ -n "$RESOLVED_WINDOWS_EXE" ] && info "[DRY RUN] Windows EXE:  $(basename "$RESOLVED_WINDOWS_EXE")"
+    [ -n "$RESOLVED_WINDOWS_MSI" ] && info "[DRY RUN] Windows MSI:  $(basename "$RESOLVED_WINDOWS_MSI")"
+    WINDOWS_EXE_SHA256="<computed-after-build>"
+    WINDOWS_MSI_SHA256="<computed-after-build>"
 else
     RELEASE_FLAGS=(
         --title "${APP_NAME} ${TAG}"
@@ -767,6 +1177,47 @@ else
     else
         warn "Other-arch DMG not found — cask will be ${ARCH_NAME}-only."
         warn "Use --universal to build both architectures in one step."
+    fi
+
+    # Windows assets — configurable via --windows-package.
+    case "$WINDOWS_PACKAGE_MODE" in
+        auto|exe|both)
+            if [ -n "$RESOLVED_WINDOWS_EXE" ] && [ -f "$RESOLVED_WINDOWS_EXE" ]; then
+                WINDOWS_UPLOAD_EXE=true
+                ASSETS+=("$RESOLVED_WINDOWS_EXE")
+                WINDOWS_EXE_SHA256="$(shasum -a 256 "$RESOLVED_WINDOWS_EXE" | awk '{print $1}')"
+                WINDOWS_EXE_SHA_FILE="${RESOLVED_WINDOWS_EXE}.sha256"
+                echo "$WINDOWS_EXE_SHA256  $(basename "$RESOLVED_WINDOWS_EXE")" > "$WINDOWS_EXE_SHA_FILE"
+                ASSETS+=("$WINDOWS_EXE_SHA_FILE")
+                info "Including Windows EXE: $(basename "$RESOLVED_WINDOWS_EXE") (SHA256: $WINDOWS_EXE_SHA256)"
+            elif [ "$WINDOWS_PACKAGE_MODE" = "exe" ] || [ "$WINDOWS_PACKAGE_MODE" = "both" ]; then
+                warn "Requested Windows EXE but no asset found in ${WINDOWS_DIST_DIR}"
+            fi
+            ;;
+    esac
+
+    case "$WINDOWS_PACKAGE_MODE" in
+        auto|msi|both)
+            if [ -n "$RESOLVED_WINDOWS_MSI" ] && [ -f "$RESOLVED_WINDOWS_MSI" ]; then
+                WINDOWS_UPLOAD_MSI=true
+                ASSETS+=("$RESOLVED_WINDOWS_MSI")
+                WINDOWS_MSI_SHA256="$(shasum -a 256 "$RESOLVED_WINDOWS_MSI" | awk '{print $1}')"
+                WINDOWS_MSI_SHA_FILE="${RESOLVED_WINDOWS_MSI}.sha256"
+                echo "$WINDOWS_MSI_SHA256  $(basename "$RESOLVED_WINDOWS_MSI")" > "$WINDOWS_MSI_SHA_FILE"
+                ASSETS+=("$WINDOWS_MSI_SHA_FILE")
+                info "Including Windows MSI: $(basename "$RESOLVED_WINDOWS_MSI") (SHA256: $WINDOWS_MSI_SHA256)"
+            elif [ "$WINDOWS_PACKAGE_MODE" = "msi" ] || [ "$WINDOWS_PACKAGE_MODE" = "both" ]; then
+                warn "Requested Windows MSI but no asset found in ${WINDOWS_DIST_DIR}"
+            fi
+            ;;
+    esac
+
+    if ! $WINDOWS_UPLOAD_EXE; then
+        SKIP_WINGET=true
+        WINDOWS_EXE_SHA256=""
+        if [ "$WINDOWS_PACKAGE_MODE" = "exe" ] || [ "$WINDOWS_PACKAGE_MODE" = "both" ] || [ "$WINDOWS_PACKAGE_MODE" = "auto" ]; then
+            warn "Windows EXE unavailable — winget step will be skipped"
+        fi
     fi
 
     gh release create "$TAG" \
@@ -849,6 +1300,36 @@ elif $SKIP_BREW; then
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  STEP 5: Update winget manifest (microsoft/winget-pkgs)
+#
+#  Forks microsoft/winget-pkgs (if needed), writes the three YAML manifests,
+#  commits to a new branch and opens a PR automatically via gh CLI.
+#  Skipped when: --skip-winget, --prerelease, or Windows EXE was not uploaded.
+# ══════════════════════════════════════════════════════════════════════════════
+
+if ! $SKIP_WINGET && ! $PRERELEASE; then
+    step "Updating winget manifest (microsoft/winget-pkgs)"
+
+    WINGET_EXE_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${TAG}/${WINDOWS_EXE_NAME}"
+
+    if $DRY_RUN; then
+        push_winget_pr true "$WINGET_EXE_URL" "${WINDOWS_EXE_SHA256:-<sha256>}"
+    else
+        if [ -z "${WINDOWS_EXE_SHA256:-}" ]; then
+            warn "WINDOWS_EXE_SHA256 is empty — winget step skipped."
+            warn "Place the Windows EXE at ${WINDOWS_EXE_PATH} and re-run with --skip-brew."
+        else
+            push_winget_pr false "$WINGET_EXE_URL" "$WINDOWS_EXE_SHA256"
+        fi
+    fi
+elif $PRERELEASE; then
+    step "Skipping winget update (pre-release)"
+    info "Pre-release versions are not submitted to microsoft/winget-pkgs"
+elif $SKIP_WINGET; then
+    step "Skipping winget update (--skip-winget)"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  Summary
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -895,6 +1376,26 @@ if ! $DRY_RUN; then
         echo ""
     else
         echo -e "  ${DIM}SHA256 (${ARCH_NAME}):${RESET} ${LOCAL_SHA256}"
+        echo ""
+    fi
+
+    if ! $SKIP_WINGET && ! $PRERELEASE && [ -n "${WINDOWS_EXE_SHA256:-}" ]; then
+        echo -e "  ${DIM}Windows (winget):${RESET}"
+        echo -e "    winget install ${WINGET_PACKAGE_ID}"
+        echo -e "    ${DIM}(after PR is merged into microsoft/winget-pkgs)${RESET}"
+        echo ""
+    fi
+
+    if [ -n "${WINDOWS_EXE_SHA256:-}" ] || [ -n "${WINDOWS_MSI_SHA256:-}" ]; then
+        echo -e "  ${DIM}Windows Direct Download:${RESET}"
+        if [ -n "${WINDOWS_EXE_SHA256:-}" ]; then
+            echo -e "    https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${TAG}/${WINDOWS_EXE_NAME}"
+            echo -e "  ${DIM}SHA256 (exe):${RESET}        ${WINDOWS_EXE_SHA256}"
+        fi
+        if [ -n "${WINDOWS_MSI_SHA256:-}" ]; then
+            echo -e "    https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${TAG}/${WINDOWS_MSI_NAME}"
+            echo -e "  ${DIM}SHA256 (msi):${RESET}        ${WINDOWS_MSI_SHA256}"
+        fi
         echo ""
     fi
 fi
