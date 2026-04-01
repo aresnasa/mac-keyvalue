@@ -91,6 +91,13 @@ MacKeyValue/build/
 MacKeyValue/dist/
 *.dmg
 
+# Windows build output
+windows/KeyValueWin/bin/
+windows/KeyValueWin/obj/
+windows/dist/
+*.pdb
+*.msi
+
 # Playgrounds
 timeline.xctimeline
 playground.xcworkspace
