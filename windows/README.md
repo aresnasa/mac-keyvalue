@@ -13,11 +13,9 @@ A Windows companion app for [MacKeyValue](../README.md) — compatible encrypted
 
 ## Requirements
 
-| Requirement | Version |
-|-------------|---------|
-| .NET SDK    | 9.0+    |
-| Windows     | 10 / 11 |
-| Visual Studio | 2022+ (optional, for IDE) |
+- .NET SDK: 9.0+
+- Windows: 10 / 11
+- Visual Studio: 2022+ (optional, for IDE)
 
 ## Quick Start
 
@@ -51,6 +49,29 @@ dotnet publish KeyValueWin/KeyValueWin.csproj `
 
 The output `dist/KeyValueWin.exe` runs without needing .NET installed.
 
+## One-click packaging (EXE / MSI)
+
+For local Windows packaging, use the dedicated script from repository root:
+
+```powershell
+pwsh .\windows\package.ps1 exe
+pwsh .\windows\package.ps1 msi
+pwsh .\windows\package.ps1 both
+```
+
+Optional parameters:
+
+```powershell
+pwsh .\windows\package.ps1 both -Version 1.2.3 -Configuration Release -SelfContained
+```
+
+Outputs are generated in `windows/dist/`:
+
+- `KeyValueWin-<VERSION>-win-x64.exe`
+- `KeyValueWin-<VERSION>-win-x64.msi`
+
+> MSI build requires WiX Toolset v4 (`wix` CLI). If WiX is missing, EXE still builds and MSI is skipped.
+
 ## Build MSI installer (WiX v4)
 
 If you need an installer package for enterprise distribution, install WiX Toolset v4 and run:
@@ -67,18 +88,21 @@ bash scripts/release.sh 1.2.3 --build-windows --windows-package msi --skip-build
 ```
 
 Artifacts are generated under `windows/dist/` with versioned names:
+
 - `KeyValueWin-<VERSION>-win-x64.exe`
 - `KeyValueWin-<VERSION>-win-x64.msi`
 
 ## Data location
 
 Entries are stored in:
-```
+
+```text
 %LOCALAPPDATA%\MacKeyValue\entries.json
 ```
 
 The DPAPI-protected master key is at:
-```
+
+```text
 %LOCALAPPDATA%\MacKeyValue\master.key
 ```
 
@@ -86,17 +110,15 @@ The DPAPI-protected master key is at:
 
 ## Cross-platform import / export
 
-| Format | Mac → Win | Win → Mac |
-|--------|-----------|-----------|
-| `.mkve` encrypted | ✅ | ✅ |
-| Native JSON | ✅ | ✅ |
-| CSV | ✅ (import) | ✅ (import) |
+- `.mkve` encrypted: Mac → Win ✅, Win → Mac ✅
+- Native JSON: Mac → Win ✅, Win → Mac ✅
+- CSV: Mac → Win ✅ (import), Win → Mac ✅ (import)
 
 Use **File → Export Encrypted (.mkve)** on either platform, then **Import** on the other.
 
 ## Project structure
 
-```
+```text
 windows/
 ├── KeyValueWin.sln
 └── KeyValueWin/

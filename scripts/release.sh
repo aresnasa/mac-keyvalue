@@ -115,15 +115,15 @@ build_windows_packages_local() {
     wix_ver="$(msi_version_from_semver "$version")"
 
     if ! is_windows_host; then
-        warn "--build-windows enabled, but current host is not Windows; skipping local Windows build"
-        return 1
+        warn "Current host is not Windows; attempting cross-build for win-x64 via dotnet/wix"
+        warn "If toolchain is incomplete, provide prebuilt files in windows/dist and rerun with --skip-build"
     fi
 
     command -v dotnet >/dev/null 2>&1 || fail "dotnet not found. Install .NET SDK first."
     mkdir -p "$WINDOWS_DIST_DIR"
     rm -rf "$publish_out"
 
-    step "Building Windows EXE (dotnet publish)"
+    step "Building Windows EXE (dotnet publish -r win-x64)"
     dotnet publish "$WINDOWS_PROJECT" \
         -c Release \
         -r win-x64 \
@@ -674,7 +674,7 @@ show_help() {
 ║    --fix-sha        Re-download DMGs & fix Cask SHA only     ║
 ║    --force          Force release even if tag exists         ║
 ║    --universal      Build & publish universal (arm64+x86_64) ║
-║    --build-windows  Build Windows package(s) on Windows host ║
+║    --build-windows  Build Windows package(s) locally          ║
 ║    --windows-package MODE (auto|exe|msi|both)               ║
 ║    --help           Show this help                           ║
 ║                                                              ║
@@ -705,7 +705,7 @@ show_help() {
 ║        -p:PublishSingleFile=true -o windows/dist/            ║
 ║                                                              ║
 ║  WINDOWS MSI                                                 ║
-║    Install WiX v4 on Windows and build using:                ║
+║    Install WiX v4 and build using:                           ║
 ║      ./scripts/release.sh <VERSION> --build-windows --windows-package msi ║
 ║                                                              ║
 ║  NOTES                                                       ║
@@ -791,6 +791,13 @@ case "$WINDOWS_PACKAGE_MODE" in
     *) fail "Invalid --windows-package value: ${WINDOWS_PACKAGE_MODE} (expected: auto|exe|msi|both)" ;;
 esac
 
+# If user explicitly asks local Windows build without choosing a mode,
+# build both EXE + MSI so release assets are complete by default.
+if $BUILD_WINDOWS && [ "$WINDOWS_PACKAGE_MODE" = "auto" ]; then
+    WINDOWS_PACKAGE_MODE="both"
+    info "--build-windows detected: --windows-package auto -> both"
+fi
+
 # Detect pre-release suffix
 if echo "$VERSION" | grep -qE -e '-(alpha|beta|rc|dev)'; then
     PRERELEASE=true
@@ -829,6 +836,21 @@ WINDOWS_EXE_NAME="KeyValueWin-${VERSION}-win-x64.exe"
 WINDOWS_EXE_PATH="${WINDOWS_DIST_DIR}/${WINDOWS_EXE_NAME}"
 WINDOWS_MSI_NAME="KeyValueWin-${VERSION}-win-x64.msi"
 WINDOWS_MSI_PATH="${WINDOWS_DIST_DIR}/${WINDOWS_MSI_NAME}"
+
+WINDOWS_REQUIRE_EXE=false
+WINDOWS_REQUIRE_MSI=false
+case "$WINDOWS_PACKAGE_MODE" in
+    exe)
+        WINDOWS_REQUIRE_EXE=true
+        ;;
+    msi)
+        WINDOWS_REQUIRE_MSI=true
+        ;;
+    both)
+        WINDOWS_REQUIRE_EXE=true
+        WINDOWS_REQUIRE_MSI=true
+        ;;
+esac
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  --fix-sha: Re-download DMGs, recompute SHA256, update the tap formula.
@@ -963,6 +985,8 @@ success "All prerequisites met"
 #  STEP 1: Build DMG
 # ══════════════════════════════════════════════════════════════════════════════
 
+INCLUDE_MACOS_DMG=true
+
 if ! $SKIP_BUILD; then
     step "Building DMG (v${VERSION})"
 
@@ -988,16 +1012,27 @@ if ! $SKIP_BUILD; then
 else
     step "Skipping build (--skip-build)"
     if ! $DRY_RUN && [ ! -f "$DMG_PATH" ]; then
-        fail "DMG not found at $DMG_PATH — remove --skip-build to build it"
+        if $WINDOWS_REQUIRE_EXE || $WINDOWS_REQUIRE_MSI; then
+            INCLUDE_MACOS_DMG=false
+            SKIP_BREW=true
+            warn "DMG not found at $DMG_PATH — switching to Windows-only release mode"
+            warn "Homebrew update is disabled automatically for this release"
+        else
+            fail "DMG not found at $DMG_PATH — remove --skip-build to build it"
+        fi
     fi
-    info "Using existing DMG: ${DMG_PATH}"
-    success "DMG verified"
+    if $INCLUDE_MACOS_DMG; then
+        info "Using existing DMG: ${DMG_PATH}"
+        success "DMG verified"
+    fi
 fi
 
 # Local SHA256 — used in the tag message and release notes.
 # The cask formula always uses the re-verified SHA from GitHub (STEP 4).
 LOCAL_SHA256=""
-if [ -f "$SHA_PATH" ]; then
+if ! $INCLUDE_MACOS_DMG; then
+    LOCAL_SHA256="N/A (windows-only release)"
+elif [ -f "$SHA_PATH" ]; then
     LOCAL_SHA256="$(awk '{print $1}' "$SHA_PATH")"
 elif ! $DRY_RUN && [ -f "$DMG_PATH" ]; then
     LOCAL_SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
@@ -1035,6 +1070,19 @@ if [ "$WINDOWS_PACKAGE_MODE" = "auto" ] || [ "$WINDOWS_PACKAGE_MODE" = "exe" ] |
 fi
 if [ "$WINDOWS_PACKAGE_MODE" = "auto" ] || [ "$WINDOWS_PACKAGE_MODE" = "msi" ] || [ "$WINDOWS_PACKAGE_MODE" = "both" ]; then
     RESOLVED_WINDOWS_MSI="$(resolve_windows_asset_path "$WINDOWS_MSI_PATH" "${WINDOWS_DIST_DIR}/KeyValueWin.msi" || true)"
+fi
+
+if ! $DRY_RUN; then
+    if $WINDOWS_REQUIRE_EXE && [ -z "$RESOLVED_WINDOWS_EXE" ]; then
+        fail "Windows EXE is required by --windows-package=${WINDOWS_PACKAGE_MODE}, but no asset found under ${WINDOWS_DIST_DIR}. Build it with --build-windows or place KeyValueWin-${VERSION}-win-x64.exe in windows/dist."
+    fi
+    if $WINDOWS_REQUIRE_MSI && [ -z "$RESOLVED_WINDOWS_MSI" ]; then
+        if is_windows_host; then
+            fail "Windows MSI is required by --windows-package=${WINDOWS_PACKAGE_MODE}, but no asset found under ${WINDOWS_DIST_DIR}. Install WiX v4 (wix CLI) and rerun with --build-windows, or place KeyValueWin-${VERSION}-win-x64.msi in windows/dist."
+        else
+            fail "Windows MSI is required by --windows-package=${WINDOWS_PACKAGE_MODE}, but no asset found under ${WINDOWS_DIST_DIR}. MSI should be built on a Windows host (WiX officially supports Windows), then copy KeyValueWin-${VERSION}-win-x64.msi to windows/dist and rerun."
+        fi
+    fi
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1144,9 +1192,13 @@ winget upgrade ${WINGET_PACKAGE_ID}
 
 if $DRY_RUN; then
     info "[DRY RUN] Would create GitHub Release: $TAG"
-    info "[DRY RUN] Primary asset:  $DMG_NAME"
-    [ -f "$SHA_PATH" ]       && info "[DRY RUN] Checksum file: ${DMG_NAME}.sha256"
-    [ -f "$OTHER_DMG_PATH" ] && info "[DRY RUN] Other arch:    $OTHER_DMG_NAME"
+    if $INCLUDE_MACOS_DMG; then
+        info "[DRY RUN] Primary asset:  $DMG_NAME"
+        [ -f "$SHA_PATH" ]       && info "[DRY RUN] Checksum file: ${DMG_NAME}.sha256"
+        [ -f "$OTHER_DMG_PATH" ] && info "[DRY RUN] Other arch:    $OTHER_DMG_NAME"
+    else
+        info "[DRY RUN] macOS DMG: skipped (Windows-only release mode)"
+    fi
     [ -n "$RESOLVED_WINDOWS_EXE" ] && info "[DRY RUN] Windows EXE:  $(basename "$RESOLVED_WINDOWS_EXE")"
     [ -n "$RESOLVED_WINDOWS_MSI" ] && info "[DRY RUN] Windows MSI:  $(basename "$RESOLVED_WINDOWS_MSI")"
     WINDOWS_EXE_SHA256="<computed-after-build>"
@@ -1163,20 +1215,25 @@ else
         gh release delete "$TAG" --repo "${GITHUB_OWNER}/${GITHUB_REPO}" --yes 2>/dev/null || true
     fi
 
-    # Collect assets: primary DMG + optional checksum + optional other arch
-    ASSETS=("$DMG_PATH")
-    [ -f "$SHA_PATH" ] && ASSETS+=("$SHA_PATH")
+    # Collect assets: macOS DMGs (optional) + Windows artifacts (if provided).
+    ASSETS=()
+    if $INCLUDE_MACOS_DMG; then
+        ASSETS+=("$DMG_PATH")
+        [ -f "$SHA_PATH" ] && ASSETS+=("$SHA_PATH")
 
-    if $UNIVERSAL; then
-        info "Universal DMG covers both arm64 and x86_64 — no separate arch DMGs needed"
-    elif [ -n "$OTHER_DMG_PATH" ] && [ -f "$OTHER_DMG_PATH" ]; then
-        ASSETS+=("$OTHER_DMG_PATH")
-        OTHER_SHA_PATH="${OTHER_DMG_PATH}.sha256"
-        [ -f "$OTHER_SHA_PATH" ] && ASSETS+=("$OTHER_SHA_PATH")
-        info "Including other-arch DMG: $OTHER_DMG_NAME"
+        if $UNIVERSAL; then
+            info "Universal DMG covers both arm64 and x86_64 — no separate arch DMGs needed"
+        elif [ -n "$OTHER_DMG_PATH" ] && [ -f "$OTHER_DMG_PATH" ]; then
+            ASSETS+=("$OTHER_DMG_PATH")
+            OTHER_SHA_PATH="${OTHER_DMG_PATH}.sha256"
+            [ -f "$OTHER_SHA_PATH" ] && ASSETS+=("$OTHER_SHA_PATH")
+            info "Including other-arch DMG: $OTHER_DMG_NAME"
+        else
+            warn "Other-arch DMG not found — cask will be ${ARCH_NAME}-only."
+            warn "Use --universal to build both architectures in one step."
+        fi
     else
-        warn "Other-arch DMG not found — cask will be ${ARCH_NAME}-only."
-        warn "Use --universal to build both architectures in one step."
+        warn "macOS DMG not included in this release (Windows-only mode)"
     fi
 
     # Windows assets — configurable via --windows-package.
