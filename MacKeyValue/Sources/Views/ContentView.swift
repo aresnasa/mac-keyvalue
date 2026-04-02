@@ -21,6 +21,8 @@ struct ContentView: View {
                     LockScreenView()
                 case .onboarding:
                     OnboardingView()
+                case .dataRecovery(let reason):
+                    DataRecoveryView(reason: reason)
                 case .unlocked:
                     switch viewModel.uiMode {
                     case .compact:
@@ -993,6 +995,171 @@ struct LockScreenView: View {
             ProgressView()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - DataRecoveryView
+
+/// Shown when the app detects that the Keychain master key is missing while
+/// encrypted data files still exist on disk (e.g. after reinstall, Keychain
+/// wipe, or TCC reset).  This view gives the user explicit control:
+///   • Export raw backup files (for manual inspection)
+///   • Reset to a clean state (WARNING: irreversible data loss)
+///   • Retry (in case the Keychain was temporarily unavailable)
+struct DataRecoveryView: View {
+    let reason: DataRecoveryReason
+
+    @EnvironmentObject var viewModel: AppViewModel
+    @State private var showResetConfirm = false
+    @State private var isRetrying = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // ── Header ──────────────────────────────────────────────────
+            VStack(spacing: 16) {
+                Image(systemName: "exclamationmark.lock.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.orange)
+
+                Text("数据安全警告")
+                    .font(.largeTitle.bold())
+
+                Text(reasonMessage)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+            }
+            .padding(.vertical, 32)
+            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity)
+            .background(.orange.opacity(0.08))
+
+            Divider()
+
+            // ── Detail Info ──────────────────────────────────────────────
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    infoCard(
+                        icon: "info.circle",
+                        color: .blue,
+                        title: "为什么会这样？",
+                        body: "加密主密钥存储在 macOS Keychain 中。当 Keychain 被清除、App 重装或系统切换账户时，密钥可能丢失。磁盘上的加密数据文件仍然完整，但没有对应的密钥无法解密。"
+                    )
+
+                    infoCard(
+                        icon: "folder.badge.questionmark",
+                        color: .purple,
+                        title: "数据文件位置",
+                        body: viewModel.storageService.storageDirectory.path
+                    )
+
+                    if case .storageCorrupted(let file) = reason {
+                        infoCard(
+                            icon: "doc.badge.exclamationmark",
+                            color: .red,
+                            title: "损坏的文件",
+                            body: file
+                        )
+                    }
+
+                    infoCard(
+                        icon: "lightbulb",
+                        color: .yellow,
+                        title: "建议操作顺序",
+                        body: "1. 点击「在 Finder 中查看」确认备份文件完好\n2. 如果可以恢复 Keychain，点击「重试」\n3. 确实无法恢复时，才选择「重置并重新开始」（数据将被清除）"
+                    )
+                }
+                .padding(24)
+            }
+
+            Divider()
+
+            // ── Action Buttons ──────────────────────────────────────────
+            HStack(spacing: 12) {
+                // Open backup folder
+                Button {
+                    NSWorkspace.shared.open(viewModel.storageService.storageDirectory)
+                } label: {
+                    Label("在 Finder 中查看", systemImage: "folder")
+                }
+                .help("打开数据目录，查看加密文件和备份文件")
+
+                Spacer()
+
+                // Retry (re-run bootstrap)
+                Button {
+                    isRetrying = true
+                    Task {
+                        await viewModel.bootstrap()
+                        isRetrying = false
+                    }
+                } label: {
+                    if isRetrying {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .frame(width: 16, height: 16)
+                    } else {
+                        Label("重试", systemImage: "arrow.clockwise")
+                    }
+                }
+                .help("如果 Keychain 已恢复，点此重试")
+
+                // Danger: reset
+                Button(role: .destructive) {
+                    showResetConfirm = true
+                } label: {
+                    Label("重置并重新开始", systemImage: "trash")
+                }
+                .help("删除所有加密数据并生成新密钥（不可恢复）")
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+        }
+        .frame(minWidth: 560, minHeight: 460)
+        .confirmationDialog(
+            "确定要重置并删除所有数据吗？",
+            isPresented: $showResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("删除并重新开始", role: .destructive) {
+                viewModel.performDataReset()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("此操作会永久删除 \(viewModel.storageService.storageDirectory.path) 中的所有条目以及备份。\n\n拟删除的文件已在 Finder 中显示——请先手动备份。")
+        }
+    }
+
+    private var reasonMessage: String {
+        switch reason {
+        case .masterKeyLost:
+            return "加密主密钥丢失，但磁盘上存在已加密数据。\n为防止数据不可恢复，应用已暫停服务。请选择下方操作。"
+        case .storageCorrupted(let file):
+            return "数据文件损坏无法被读取。\n已尝试自动从备份源恢复：「\(file)」"
+        case .bootstrapFailed(let message):
+            return "应用启动失败：「\(message)」"
+        }
+    }
+
+    @ViewBuilder
+    private func infoCard(icon: String, color: Color, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(body)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(14)
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

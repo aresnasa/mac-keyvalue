@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -30,14 +31,114 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _decryptedValue = string.Empty;
     [ObservableProperty] private bool _isDecrypted;
 
+    // ── Recovery mode ─────────────────────────────────────────────────────────
+
+    [ObservableProperty] private bool _isDataRecovery;
+    [ObservableProperty] private string _recoveryReason = string.Empty;
+    [ObservableProperty] private string _recoveryDataFolder = string.Empty;
+
     partial void OnSearchQueryChanged(string value) => ApplyFilter();
 
     // ── Initialization ────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Phase-based bootstrap that isolates failures so a damaged key or
+    /// corrupt data file never silently overwrites good data.
+    /// </summary>
     public void Initialize()
     {
-        _storage.Load();
+        // Phase 1 – detect existing data before touching the key
+        var hasData = _storage.HasExistingEntriesFile;
+
+        // Phase 2 – verify the master key (throws if key lost & data exists)
+        try
+        {
+            _encryption.EnsureMasterKey(storageHasExistingData: hasData);
+        }
+        catch (MasterKeyLostWithExistingDataException)
+        {
+            EnterRecoveryMode(
+                "Master encryption key is missing.\n\n" +
+                "Your encrypted data still exists on disk, but without the original DPAPI key " +
+                "the entries cannot be decrypted. Creating a new key would destroy all data.\n\n" +
+                "Options:\n" +
+                "  • Restore the master.key file from a backup\n" +
+                "  • Reset all data to start fresh (entries will be lost)");
+            return;
+        }
+
+        // Phase 3 – load data
+        try
+        {
+            _storage.Load();
+        }
+        catch (StorageLoadException ex)
+        {
+            EnterRecoveryMode(
+                $"Data files are unreadable — all copies (including backups) are corrupt.\n\n" +
+                $"Technical detail: {ex.Message}\n\n" +
+                "Options:\n" +
+                "  • Open the data folder and restore a backup manually\n" +
+                "  • Reset all data to start fresh");
+            return;
+        }
+
+        // Phase 4 – success
         ReloadEntries();
+    }
+
+    private void EnterRecoveryMode(string reason)
+    {
+        IsDataRecovery = true;
+        RecoveryReason = reason;
+        RecoveryDataFolder = StorageService.DataDirectory;
+    }
+
+    // ── Recovery commands ─────────────────────────────────────────────────────
+
+    [RelayCommand]
+    private void OpenDataFolder()
+    {
+        try { Process.Start("explorer.exe", StorageService.DataDirectory); }
+        catch (Exception ex) { ShowStatus($"Cannot open folder: {ex.Message}"); }
+    }
+
+    [RelayCommand]
+    private void RetryInitialize()
+    {
+        IsDataRecovery = false;
+        RecoveryReason = string.Empty;
+        Initialize();
+    }
+
+    [RelayCommand]
+    private void PerformDataReset()
+    {
+        var result = MessageBox.Show(
+            "This will permanently delete all stored entries and the master encryption key.\n\n" +
+            "This action CANNOT be undone.\n\nAre you absolutely sure?",
+            "Confirm Data Reset",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        try
+        {
+            _storage.DeleteAllFiles();
+            _encryption.DeleteMasterKey();
+            IsDataRecovery = false;
+            RecoveryReason = string.Empty;
+            Entries.Clear();
+            FilteredEntries.Clear();
+            Initialize();
+            ShowStatus("All data reset. A new encryption key has been created.");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Reset failed: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void ReloadEntries()
@@ -54,6 +155,7 @@ public partial class MainViewModel : ObservableObject
         var source = string.IsNullOrEmpty(q) ? Entries : _storage.Search(q).AsEnumerable();
         foreach (var e in source) FilteredEntries.Add(e);
     }
+
 
     // ── Commands ──────────────────────────────────────────────────────────────
 

@@ -9,6 +9,21 @@ enum AppState: Equatable {
     case locked
     case unlocked
     case onboarding
+    /// Shown when the Keychain master key is missing but encrypted data files
+    /// exist on disk (e.g. after reinstall, TCC wipe, or Keychain reset).
+    /// The user must take explicit action — never silently overwrite their data.
+    case dataRecovery(reason: DataRecoveryReason)
+}
+
+// MARK: - DataRecoveryReason
+
+enum DataRecoveryReason: Equatable {
+    /// Keychain entry deleted/expired while encrypted JSON files still exist
+    case masterKeyLost
+    /// The storage JSON file could not be decoded (corrupt / version mismatch)
+    case storageCorrupted(fileName: String)
+    /// Generic bootstrap failure with a message for the user
+    case bootstrapFailed(message: String)
 }
 
 // MARK: - UIMode
@@ -283,49 +298,79 @@ final class AppViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        // ── Phase 1: detect whether encrypted data already exists on disk ──
+        // This MUST happen BEFORE asking the Keychain for the master key so
+        // we can prevent a new key from silently overwriting existing data.
+        let hasExistingData = storageService.hasExistingEntriesFile
+
+        // ── Phase 2: ensure / verify master key ───────────────────────────
+        let isNewKey: Bool
         do {
-            // 1. Ensure encryption master key exists.
-            //    Retry once after a short delay if the Keychain is temporarily
-            //    unavailable (e.g. right after login, before the keychain is unlocked).
-            let isNewKey: Bool
             do {
-                isNewKey = try encryptionService.ensureMasterKeyExists()
+                isNewKey = try encryptionService.ensureMasterKeyExists(
+                    storageHasExistingData: hasExistingData
+                )
             } catch EncryptionError.keychainReadFailed {
+                // Keychain temporarily unavailable (right after login). Retry once.
                 print("[AppViewModel] Keychain 暂时不可用，2秒后重试…")
                 try await Task.sleep(nanoseconds: 2_000_000_000)
-                isNewKey = try encryptionService.ensureMasterKeyExists()
+                isNewKey = try encryptionService.ensureMasterKeyExists(
+                    storageHasExistingData: hasExistingData
+                )
             }
-            if isNewKey {
-                appState = .onboarding
-            } else {
-                appState = .unlocked
-            }
-
-            // 2. Set up local storage
-            try storageService.setup()
-
-            // 3. Load data
-            reloadEntries()
-            reloadClipboardHistory()
-
-            // 4. Start clipboard monitoring
+        } catch EncryptionError.masterKeyLostWithExistingData {
+            // ⚠️  Critical: key gone but data present — show recovery UI, DO NOT reset.
+            print("[AppViewModel] 主密钥丢失且磁盘有加密数据 — 切换到数据恢复模式")
+            appState = .dataRecovery(reason: .masterKeyLost)
+            // Still start basic services (no file writes happen while
+            // isDataLoaded is false in StorageService).
             clipboardService.startMonitoring()
-
-            // 5. Start hotkey listening
-            hotkeyService.registerDefaultBindingsIfNeeded()
-            hotkeyService.start()
-
-            // 6. Start auto-sync if configured
-            if gistSyncService.configuration.autoSyncEnabled {
-                gistSyncService.startAutoSync()
-            }
-
-            showStatusMessage("应用已就绪")
-
+            return
         } catch {
-            showStatusMessage("启动失败: \(error.localizedDescription)")
-            print("[AppViewModel] Bootstrap failed: \(error)")
+            print("[AppViewModel] 主密钥初始化失败: \(error)")
+            appState = .dataRecovery(
+                reason: .bootstrapFailed(message: error.localizedDescription)
+            )
+            return
         }
+
+        // ── Phase 3: set up storage (independent of key phase) ────────────
+        do {
+            try storageService.setup()
+        } catch StorageError.decodingFailed(let reason) {
+            // Data file is corrupt. Show recovery UI so the user decides
+            // whether to restore from backup or start fresh.
+            print("[AppViewModel] 存储解码失败: \(reason)")
+            appState = .dataRecovery(reason: .storageCorrupted(fileName: reason))
+            return
+        } catch {
+            print("[AppViewModel] 存储层初始化失败: \(error)")
+            // Non-fatal: continue with empty in-memory state. Writes are already
+            // blocked by StorageService.isDataLoaded guard.
+            showStatusMessage("❗️ 存储初始化異常: \(error.localizedDescription)", duration: 8)
+        }
+
+        // ── Phase 4: transition to correct app state ───────────────────────
+        if isNewKey {
+            appState = .onboarding
+        } else {
+            appState = .unlocked
+        }
+
+        // ── Phase 5: load data and start background services ──────────────
+        reloadEntries()
+        reloadClipboardHistory()
+
+        clipboardService.startMonitoring()
+
+        hotkeyService.registerDefaultBindingsIfNeeded()
+        hotkeyService.start()
+
+        if gistSyncService.configuration.autoSyncEnabled {
+            gistSyncService.startAutoSync()
+        }
+
+        showStatusMessage("应用已就绪")
     }
 
     /// Call when the app is about to terminate.
@@ -1266,5 +1311,52 @@ final class AppViewModel: ObservableObject {
     func completeOnboarding() {
         appState = .unlocked
         showStatusMessage("欢迎使用 MacKeyValue！")
+    }
+
+    // MARK: - Data Recovery
+
+    /// Performs a full destructive reset: deletes all storage files, removes
+    /// the Keychain master key, and re-runs bootstrap as a clean first launch.
+    ///
+    /// **IMPORTANT**: This is irreversible.  Only call after the user has
+    /// explicitly confirmed the destruction dialog shown in `DataRecoveryView`.
+    func performDataReset() {
+        print("[DataRecovery] 用户确认执行数据重置…")
+
+        // 1. Stop all background services to prevent concurrent writes.
+        clipboardService.stopMonitoring()
+        clipboardService.stopAccessibilityPolling()
+        hotkeyService.stop()
+        gistSyncService.stopAutoSync()
+        storageService.teardown()
+
+        // 2. Delete storage files (entries.json + backups).
+        let fm = FileManager.default
+        let dir = storageService.storageDirectory
+        let filesToDelete: [String] = [
+            "entries.json", "entries.json.backup", "entries.json.backup.2", "entries.json.backup.3",
+            "clipboard_history.json", "clipboard_history.json.backup",
+            "clipboard_history.json.backup.2", "clipboard_history.json.backup.3",
+            "sync_metadata.json", "sync_metadata.json.backup",
+            "settings.json",
+        ]
+        for name in filesToDelete {
+            let url = dir.appendingPathComponent(name)
+            if fm.fileExists(atPath: url.path) {
+                try? fm.removeItem(at: url)
+                print("[DataRecovery] Deleted: \(name)")
+            }
+        }
+
+        // 3. Delete the Keychain master key so a fresh one is generated.
+        try? encryptionService.deleteMasterKey()
+        print("[DataRecovery] Keychain master key deleted.")
+
+        // 4. Re-run bootstrap — this time storageHasExistingData == false so
+        //    a new key is generated and the onboarding flow starts.
+        Task { @MainActor [weak self] in
+            await self?.bootstrap()
+            self?.showStatusMessage("数据已重置，这是全新开始。", duration: 6)
+        }
     }
 }

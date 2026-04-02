@@ -115,6 +115,12 @@ final class StorageService {
     private var clipboardHistoryDirty = false
     private var syncMetadataDirty = false
 
+    /// Data-integrity guard: set to `true` ONLY after ALL caches are loaded
+    /// successfully from disk.  Any write (auto-save or explicit) is blocked
+    /// while this flag is `false` to prevent an empty/partial in-memory state
+    /// from overwriting valid on-disk data.
+    private var isDataLoaded = false
+
     /// Auto-save timer
     private var autoSaveTimer: DispatchSourceTimer?
 
@@ -428,20 +434,30 @@ final class StorageService {
 
     private func loadAllCaches() throws {
         try queue.sync {
-            entriesCache = try loadFromFile(
+            // Load into TEMPORARIES first so a mid-sequence failure never
+            // leaves the in-memory caches in a partial / empty state.
+            let loadedEntries: [KeyValueEntry] = try loadFromFile(
                 fileName: configuration.entriesFileName,
                 type: [KeyValueEntry].self
             ) ?? []
 
-            clipboardHistoryCache = try loadFromFile(
+            let loadedClipboard: [ClipboardHistoryItem] = try loadFromFile(
                 fileName: configuration.clipboardHistoryFileName,
                 type: [ClipboardHistoryItem].self
             ) ?? []
 
-            syncMetadataCache = try loadFromFile(
+            let loadedSync: [GistSyncMetadata] = try loadFromFile(
                 fileName: configuration.syncMetadataFileName,
                 type: [GistSyncMetadata].self
             ) ?? []
+
+            // ALL three loads succeeded — atomic commit to class state.
+            entriesCache          = loadedEntries
+            clipboardHistoryCache = loadedClipboard
+            syncMetadataCache     = loadedSync
+
+            // Only arm writes once we know the data is trustworthy.
+            isDataLoaded = true
         }
     }
 
@@ -457,12 +473,21 @@ final class StorageService {
             if data.isEmpty { return nil }
             return try decoder.decode(T.self, from: data)
         } catch let decodingError as DecodingError {
-            // Attempt to read the backup
-            let backupURL = url.appendingPathExtension("backup")
-            if fileManager.fileExists(atPath: backupURL.path),
-               let backupData = try? Data(contentsOf: backupURL),
-               let decoded = try? decoder.decode(T.self, from: backupData) {
-                // Restore from backup
+            // Primary file is corrupted — try backups in order (newest first).
+            let backupCandidates = [
+                url.appendingPathExtension("backup"),
+                url.appendingPathExtension("backup.2"),
+                url.appendingPathExtension("backup.3"),
+            ]
+            for backupURL in backupCandidates {
+                guard fileManager.fileExists(atPath: backupURL.path),
+                      let backupData = try? Data(contentsOf: backupURL),
+                      !backupData.isEmpty,
+                      let decoded = try? decoder.decode(T.self, from: backupData)
+                else { continue }
+
+                // Restore from this backup copy.
+                print("[StorageService] ⚠️  Decoded \(fileName) from backup: \(backupURL.lastPathComponent)")
                 try? backupData.write(to: url, options: .atomic)
                 return decoded
             }
@@ -479,6 +504,13 @@ final class StorageService {
     /// Forces an immediate save of all dirty caches to disk.
     func saveAllDirty() throws {
         try queue.sync {
+            // Safety guard: never write if data was never successfully loaded.
+            // An unloaded cache (isDataLoaded=false) means we have an empty
+            // in-memory state and writing it would destroy on-disk data.
+            guard isDataLoaded else {
+                print("[StorageService] ⛔ saveAllDirty skipped — data not yet loaded (isDataLoaded=false)")
+                return
+            }
             if entriesDirty {
                 try saveToFile(entriesCache, fileName: configuration.entriesFileName)
                 entriesDirty = false
@@ -497,6 +529,10 @@ final class StorageService {
     /// Forces an immediate save of entries to disk, regardless of dirty flag.
     func forceSaveEntries() throws {
         try queue.sync {
+            guard isDataLoaded else {
+                print("[StorageService] ⛔ forceSaveEntries skipped — data not yet loaded")
+                return
+            }
             try saveToFile(entriesCache, fileName: configuration.entriesFileName)
             entriesDirty = false
         }
@@ -508,11 +544,26 @@ final class StorageService {
         do {
             let data = try encoder.encode(value)
 
-            // Create a backup of the existing file before overwriting
+            // ── Rotating backup: keep up to 3 dated copies ───────────────
+            // Before overwriting, rotate existing backups:
+            //   .backup.2 ← .backup.1 ← .backup (most-recent) ← current
+            // This preserves the last 3 states beyond the current file.
             if fileManager.fileExists(atPath: url.path) {
-                let backupURL = url.appendingPathExtension("backup")
-                try? fileManager.removeItem(at: backupURL)
-                try? fileManager.copyItem(at: url, to: backupURL)
+                let b1 = url.appendingPathExtension("backup")
+                let b2 = url.appendingPathExtension("backup.2")
+                let b3 = url.appendingPathExtension("backup.3")
+
+                // Shift: .backup.2 → .backup.3
+                if fileManager.fileExists(atPath: b2.path) {
+                    try? fileManager.removeItem(at: b3)
+                    try? fileManager.moveItem(at: b2, to: b3)
+                }
+                // Shift: .backup → .backup.2
+                if fileManager.fileExists(atPath: b1.path) {
+                    try? fileManager.moveItem(at: b1, to: b2)
+                }
+                // Copy current → .backup (newest backup)
+                try? fileManager.copyItem(at: url, to: b1)
             }
 
             try data.write(to: url, options: [.atomic, .completeFileProtection])
@@ -550,6 +601,8 @@ final class StorageService {
 
     /// Called by the auto-save timer. Must be invoked on `queue`.
     private func performAutoSave() throws {
+        // Block writes if data hasn't been loaded yet (prevents empty-cache overwrite).
+        guard isDataLoaded else { return }
         if entriesDirty {
             try saveToFile(entriesCache, fileName: configuration.entriesFileName)
             entriesDirty = false
@@ -640,6 +693,20 @@ final class StorageService {
     /// Returns the base storage directory URL.
     var storageDirectory: URL {
         configuration.baseDirectory
+    }
+
+    /// `true` if the entries JSON file already exists on disk (i.e., this is
+    /// not a first-run scenario).  Used by `AppViewModel` to detect when a new
+    /// Keychain master key was generated DESPITE existing encrypted data being
+    /// present — which would make all entries un-decryptable.
+    var hasExistingEntriesFile: Bool {
+        fileManager.fileExists(atPath: fileURL(for: configuration.entriesFileName).path)
+    }
+
+    /// `true` if all caches have been successfully loaded from disk.
+    /// Exposed for diagnostics / test.
+    var dataIntegrityOK: Bool {
+        queue.sync { isDataLoaded }
     }
 
     /// Returns the total number of entries in the store.

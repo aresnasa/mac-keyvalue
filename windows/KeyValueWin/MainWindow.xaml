@@ -15,6 +15,8 @@
     <conv:InvertVisibilityConverter   x:Key="InvertVis"/>
     <conv:BoolToFavoriteStarConverter x:Key="BoolStar"/>
     <conv:IntToVisibilityConverter    x:Key="IntVis"/>
+    <DropShadowEffect x:Key="CardShadow" BlurRadius="24" ShadowDepth="4"
+                      Direction="270" Color="#20000000" Opacity="0.35"/>
   </Window.Resources>
 
   <Grid>
@@ -22,7 +24,63 @@
       <RowDefinition Height="52"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
+
+    <!-- ── Data Recovery Banner (shown when IsDataRecovery = true) ── -->
+    <Border Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="100"
+            Background="#CC1C1C1E"
+            Visibility="{Binding IsDataRecovery, Converter={StaticResource BoolVis}}">
+      <Border Background="White" CornerRadius="12" MaxWidth="600" MaxHeight="560"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Padding="32" Effect="{StaticResource CardShadow}">
+        <StackPanel>
+          <!-- Icon + title -->
+          <TextBlock Text="⚠️  Data Recovery Required" FontSize="22" FontWeight="SemiBold"
+                     Foreground="#FF9500" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+
+          <!-- Reason -->
+          <Border Background="#FFF3E3" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+            <TextBlock Text="{Binding RecoveryReason}" FontSize="13" TextWrapping="Wrap"
+                       Foreground="#6B4C00" LineHeight="22"/>
+          </Border>
+
+          <!-- Data folder path -->
+          <TextBlock Text="Data folder:" FontSize="12" Foreground="Gray" Margin="0,0,0,4"/>
+          <Border Background="#F2F2F7" CornerRadius="6" Padding="10,6" Margin="0,0,0,20">
+            <TextBlock Text="{Binding RecoveryDataFolder}" FontSize="12" FontFamily="Consolas"
+                       Foreground="#333" TextWrapping="Wrap"/>
+          </Border>
+
+          <!-- Action buttons -->
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+            <Button Style="{StaticResource SecondaryButton}" Content="📂  Open Data Folder"
+                    Command="{Binding OpenDataFolderCommand}" Margin="0,0,10,0"/>
+            <Button Style="{StaticResource SecondaryButton}" Content="🔄  Retry"
+                    Command="{Binding RetryInitializeCommand}" Margin="0,0,10,0"/>
+            <Button Background="#FF3B30" Foreground="White" FontSize="13" FontWeight="Medium"
+                    Padding="16,7" BorderThickness="0" Cursor="Hand"
+                    Command="{Binding PerformDataResetCommand}"
+                    ToolTip="⚠️ This will permanently delete all data and create a fresh encryption key">
+              <Button.Template>
+                <ControlTemplate TargetType="Button">
+                  <Border Background="{TemplateBinding Background}" CornerRadius="8"
+                          Padding="{TemplateBinding Padding}">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter Property="Background" Value="#C0392B"/>
+                    </Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </Button.Template>
+              <TextBlock Text="🗑  Reset All Data" Foreground="White" FontSize="13"/>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Border>
 
     <!-- ── Toolbar ── -->
     <Border Grid.Row="0" Background="White"

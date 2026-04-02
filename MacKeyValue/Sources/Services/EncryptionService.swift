@@ -14,6 +14,11 @@ enum EncryptionError: LocalizedError {
     case invalidData(String)
     case masterKeyNotFound
     case keyDerivationFailed
+    /// The Keychain entry for the master key was deleted / lost, but encrypted
+    /// data files already exist on disk.  Generating a new key would make all
+    /// existing entries permanently unreadable, so this error is raised instead
+    /// of silently creating a fresh key.  The caller must surface a recovery UI.
+    case masterKeyLostWithExistingData
 
     var errorDescription: String? {
         switch self {
@@ -35,6 +40,8 @@ enum EncryptionError: LocalizedError {
             return "Master encryption key not found in Keychain"
         case .keyDerivationFailed:
             return "Key derivation from password failed"
+        case .masterKeyLostWithExistingData:
+            return "加密主密钥丢失，但磁盘上存在已加密数据。请勿重置——需要先恢复主密钥才能解密已有条目。"
         }
     }
 }
@@ -189,18 +196,34 @@ final class EncryptionService {
 
     /// Ensures a master key exists in the Keychain; generates one if absent.
     ///
+    /// - Parameter storageHasExistingData: Pass `true` when the storage layer
+    ///   has already detected that encrypted data files exist on disk.  If the
+    ///   Keychain key is missing AND this flag is `true`, the method throws
+    ///   `.masterKeyLostWithExistingData` instead of silently creating a new key
+    ///   (which would make all existing entries permanently unreadable).
+    ///
     /// **IMPORTANT**: Only creates a new key when the Keychain explicitly reports
-    /// "item not found".  Any other Keychain error (locked, permission denied,
-    /// interaction not allowed, etc.) is propagated so that the caller can
-    /// surface it to the user instead of silently overwriting an existing key.
+    /// "item not found" AND `storageHasExistingData == false`.
+    /// Any other Keychain error propagates so the caller can surface it.
     @discardableResult
-    func ensureMasterKeyExists() throws -> Bool {
+    func ensureMasterKeyExists(storageHasExistingData: Bool = false) throws -> Bool {
         do {
             _ = try getMasterKey()
             return false // key already existed
         } catch EncryptionError.masterKeyNotFound {
-            // Key genuinely does not exist — safe to create a new one.
-            print("[EncryptionService] 未找到主密钥，正在生成新密钥…")
+            // ── Safety check ────────────────────────────────────────────
+            // If encrypted data files already exist, creating a NEW master key
+            // would make every stored entry permanently unreadable.
+            // Raise a recoverable error instead of destroying user data.
+            if storageHasExistingData {
+                print("[EncryptionService] ⚠️  主密钥在 Keychain 中丢失，但磁盘存在已加密数据 — 拒绝生成新密钥")
+                print("[EncryptionService]    可能原因：重装系统 / Keychain 被清空 / App 重签名")
+                print("[EncryptionService]    用户需要通过数据恢复流程处理，而不是静默覆盖")
+                throw EncryptionError.masterKeyLostWithExistingData
+            }
+
+            // No existing data → first run or clean install: safe to create.
+            print("[EncryptionService] 未找到主密钥（无已有数据），正在生成新密钥（首次运行）…")
             let key = SymmetricKey(size: .bits256)
             try saveMasterKeyToKeychain(key)
             queue.sync(flags: .barrier) {

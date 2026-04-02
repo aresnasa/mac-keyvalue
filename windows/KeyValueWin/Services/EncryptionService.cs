@@ -101,9 +101,27 @@ public sealed class EncryptionService
         lock (_lock) { _cachedKey = null; }
     }
 
+    /// <summary>
+    /// Verifies the master key is accessible.  If the key file is missing AND
+    /// the caller reports that encrypted data already exists on disk, throws
+    /// <see cref="MasterKeyLostWithExistingDataException"/> instead of silently
+    /// creating a new key that would make all existing data permanently unreadable.
+    /// </summary>
+    /// <param name="storageHasExistingData">
+    /// Pass <c>true</c> when <see cref="StorageService.HasExistingEntriesFile"/>
+    /// returns <c>true</c>.
+    /// </param>
+    public void EnsureMasterKey(bool storageHasExistingData = false)
+    {
+        if (!HasMasterKey && storageHasExistingData)
+            throw new MasterKeyLostWithExistingDataException();
+
+        _ = GetOrCreateMasterKey();   // warm the in-memory cache
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
-    private byte[] GetOrCreateMasterKey()
+    private byte[] GetOrCreateMasterKey(bool storageHasExistingData = false)
     {
         lock (_lock)
         {
@@ -117,6 +135,12 @@ public sealed class EncryptionService
             }
             else
             {
+                // SAFETY CHECK: never silently create a new key when encrypted
+                // data already exists — all previous entries would become
+                // permanently unreadable.
+                if (storageHasExistingData)
+                    throw new MasterKeyLostWithExistingDataException();
+
                 _cachedKey = RandomNumberGenerator.GetBytes(KeySize);
                 Directory.CreateDirectory(Path.GetDirectoryName(KeyFilePath)!);
                 var protected_ = ProtectedData.Protect(
@@ -169,3 +193,14 @@ public sealed class EncryptionService
             info: HkdfInfo);
     }
 }
+
+/// <summary>
+/// Thrown when the DPAPI-protected master key file is missing but encrypted
+/// data entries already exist on disk.  Silently creating a new key at this
+/// point would permanently destroy all existing data.
+/// </summary>
+public sealed class MasterKeyLostWithExistingDataException()
+    : Exception(
+        "Master encryption key is missing but encrypted data files exist. " +
+        "Creating a new key would permanently destroy all existing entries. " +
+        "Please restore your master.key file or perform a confirmed data reset.");
