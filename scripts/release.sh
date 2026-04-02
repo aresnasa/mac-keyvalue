@@ -1135,11 +1135,13 @@ if $DRY_RUN; then
     info "[DRY RUN] Would create annotated tag: $TAG"
     info "[DRY RUN] Would push tag to origin"
 else
-    # Delete existing local + remote tag when --force
-    if git -C "$PROJECT_ROOT" tag -l "$TAG" | grep -q "$TAG"; then
-        git -C "$PROJECT_ROOT" tag -d "$TAG" 2>/dev/null || true
+    # In force mode, clear stale local/remote tag refs first (best effort).
+    if $FORCE; then
+        if git -C "$PROJECT_ROOT" tag -l "$TAG" | grep -q "$TAG"; then
+            git -C "$PROJECT_ROOT" tag -d "$TAG" 2>/dev/null || true
+        fi
         git -C "$PROJECT_ROOT" push origin ":refs/tags/$TAG" 2>/dev/null || true
-        info "Deleted existing tag $TAG"
+        info "Force mode: cleared existing tag refs for $TAG"
     fi
 
     # Commit any outstanding file changes (e.g. version bumps)
@@ -1166,8 +1168,13 @@ else
         info "$PUSH_OUTPUT"
     fi
 
-    git -C "$PROJECT_ROOT" tag -a "$TAG" -m "$TAG_MESSAGE"
-    git -C "$PROJECT_ROOT" push origin "$TAG"
+    if $FORCE; then
+        git -C "$PROJECT_ROOT" tag -f -a "$TAG" -m "$TAG_MESSAGE"
+        git -C "$PROJECT_ROOT" push origin "refs/tags/$TAG" --force
+    else
+        git -C "$PROJECT_ROOT" tag -a "$TAG" -m "$TAG_MESSAGE"
+        git -C "$PROJECT_ROOT" push origin "$TAG"
+    fi
     success "Tag $TAG created and pushed"
 fi
 

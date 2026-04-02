@@ -673,7 +673,7 @@ if $DO_DMG; then
     ln -s /Applications "$DMG_STAGING/Applications"
 
     # Create a README.txt for the DMG with install instructions
-    cat > "$DMG_STAGING/安装说明.txt" <<INSTALL_EOF
+    cat > "$DMG_STAGING/安装说明.txt" <<'INSTALL_EOF'
 ╔══════════════════════════════════════════════════════════╗
 ║  KeyValue – 安装说明                                      ║
 ╚══════════════════════════════════════════════════════════╝
