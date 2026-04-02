@@ -1404,9 +1404,14 @@ if $DRY_RUN; then
     WINDOWS_EXE_SHA256="<computed-after-build>"
     WINDOWS_MSI_SHA256="<computed-after-build>"
 else
+    # Write release notes to a temp file — avoids gh CLI hanging on large
+    # inline --notes strings (observed with long markdown + code fences).
+    RELEASE_NOTES_FILE="$(mktemp -t keyvalue-release-notes.XXXXXX.md)"
+    printf '%s\n' "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
+
     RELEASE_FLAGS=(
         --title "${APP_NAME} ${TAG}"
-        --notes "$RELEASE_NOTES"
+        --notes-file "$RELEASE_NOTES_FILE"
     )
     $PRERELEASE && RELEASE_FLAGS+=(--prerelease)
 
@@ -1481,6 +1486,9 @@ else
         "${ASSETS[@]}" \
         --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
         "${RELEASE_FLAGS[@]}"
+    local gh_rc=$?
+    rm -f "$RELEASE_NOTES_FILE"
+    [ $gh_rc -ne 0 ] && fail "gh release create failed (exit $gh_rc)"
 
     success "Release created: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/${TAG}"
 fi
