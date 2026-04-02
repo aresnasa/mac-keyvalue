@@ -68,6 +68,38 @@ warn()    { echo -e "  ${YELLOW}⚠️  $1${RESET}"; }
 fail()    { echo -e "  ${RED}❌ $1${RESET}"; exit 1; }
 info()    { echo -e "  ${DIM}$1${RESET}"; }
 
+run_git_push_with_retry() {
+    local repo_dir="$1"
+    shift
+    local attempts=3
+    local i out rc
+
+    for ((i=1; i<=attempts; i++)); do
+        if [ -n "${RELEASE_PROXY:-}" ]; then
+            out="$(git -C "$repo_dir" -c http.proxy="$RELEASE_PROXY" -c https.proxy="$RELEASE_PROXY" push "$@" 2>&1)"
+            rc=$?
+        else
+            out="$(git -C "$repo_dir" push "$@" 2>&1)"
+            rc=$?
+        fi
+
+        if [ $rc -eq 0 ]; then
+            [ -n "$out" ] && echo "$out"
+            return 0
+        fi
+
+        if echo "$out" | grep -qiE 'SSL_ERROR_SYSCALL|Couldn.t connect|Failed to connect|timed out|Connection reset|HTTP2 framing'; then
+            warn "git push network/TLS issue (attempt ${i}/${attempts})"
+            [ $i -lt $attempts ] && sleep 2 && continue
+        fi
+
+        echo "$out"
+        return $rc
+    done
+
+    return 1
+}
+
 is_windows_host() {
     case "${OSTYPE:-}" in
         msys*|cygwin*|win32*) return 0 ;;
@@ -1175,7 +1207,7 @@ else
         if git -C "$PROJECT_ROOT" tag -l "$TAG" | grep -q "$TAG"; then
             git -C "$PROJECT_ROOT" tag -d "$TAG" 2>/dev/null || true
         fi
-        git -C "$PROJECT_ROOT" push origin ":refs/tags/$TAG" 2>/dev/null || true
+        run_git_push_with_retry "$PROJECT_ROOT" origin ":refs/tags/$TAG" >/dev/null 2>&1 || true
         info "Force mode: cleared existing tag refs for $TAG"
     fi
 
@@ -1191,7 +1223,7 @@ else
     fi
 
     PUSH_OUTPUT=""
-    if ! PUSH_OUTPUT="$(git -C "$PROJECT_ROOT" push origin "$PUSH_BRANCH" 2>&1)"; then
+    if ! PUSH_OUTPUT="$(run_git_push_with_retry "$PROJECT_ROOT" origin "$PUSH_BRANCH" 2>&1)"; then
         echo "$PUSH_OUTPUT"
         if echo "$PUSH_OUTPUT" | grep -qiE 'non-fast-forward|\[rejected\]'; then
             fail "Push to origin/${PUSH_BRANCH} rejected (non-fast-forward). Run: git pull --rebase origin ${PUSH_BRANCH}, resolve conflicts if any, then rerun release.sh"
@@ -1205,10 +1237,18 @@ else
 
     if $FORCE; then
         git -C "$PROJECT_ROOT" tag -f -a "$TAG" -m "$TAG_MESSAGE"
-        git -C "$PROJECT_ROOT" push origin "refs/tags/$TAG" --force
+        TAG_PUSH_OUTPUT="$(run_git_push_with_retry "$PROJECT_ROOT" origin "refs/tags/$TAG" --force 2>&1)" || {
+            echo "$TAG_PUSH_OUTPUT"
+            fail "Tag push failed for ${TAG}. Check network/proxy and rerun release.sh"
+        }
+        [ -n "$TAG_PUSH_OUTPUT" ] && info "$TAG_PUSH_OUTPUT"
     else
         git -C "$PROJECT_ROOT" tag -a "$TAG" -m "$TAG_MESSAGE"
-        git -C "$PROJECT_ROOT" push origin "$TAG"
+        TAG_PUSH_OUTPUT="$(run_git_push_with_retry "$PROJECT_ROOT" origin "$TAG" 2>&1)" || {
+            echo "$TAG_PUSH_OUTPUT"
+            fail "Tag push failed for ${TAG}. Check network/proxy and rerun release.sh"
+        }
+        [ -n "$TAG_PUSH_OUTPUT" ] && info "$TAG_PUSH_OUTPUT"
     fi
     success "Tag $TAG created and pushed"
 fi
