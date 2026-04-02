@@ -85,6 +85,29 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
         self.notes = notes
     }
 
+    // MARK: - Codable (backward-compatible custom decoding)
+
+    /// Custom decoder that tolerates entries saved by older app versions that
+    /// lacked certain fields (e.g. `url`, `usageCount`, `notes`).
+    /// Any missing key falls back to the same default used in `init(...)`.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id            = try c.decode(UUID.self,    forKey: .id)
+        title         = try c.decode(String.self,  forKey: .title)
+        key           = try c.decode(String.self,  forKey: .key)
+        url           = try c.decodeIfPresent(String.self,  forKey: .url)           ?? ""
+        encryptedValue = try c.decode(Data.self,   forKey: .encryptedValue)
+        category      = try c.decodeIfPresent(Category.self, forKey: .category)     ?? .other
+        tags          = try c.decodeIfPresent([String].self, forKey: .tags)          ?? []
+        isPrivate     = try c.decodeIfPresent(Bool.self, forKey: .isPrivate)         ?? false
+        isFavorite    = try c.decodeIfPresent(Bool.self, forKey: .isFavorite)        ?? false
+        createdAt     = try c.decodeIfPresent(Date.self, forKey: .createdAt)         ?? Date()
+        updatedAt     = try c.decodeIfPresent(Date.self, forKey: .updatedAt)         ?? Date()
+        lastUsedAt    = try c.decodeIfPresent(Date.self, forKey: .lastUsedAt)
+        usageCount    = try c.decodeIfPresent(Int.self,  forKey: .usageCount)        ?? 0
+        notes         = try c.decodeIfPresent(String.self, forKey: .notes)           ?? ""
+    }
+
     // MARK: - Mutating Helpers
 
     /// Records a usage event, incrementing the counter and updating the timestamp.

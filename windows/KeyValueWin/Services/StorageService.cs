@@ -114,7 +114,8 @@ public sealed class StorageService
                 || e.Key.Contains(q, StringComparison.OrdinalIgnoreCase)
                 || e.Url.Contains(q, StringComparison.OrdinalIgnoreCase)
                 || e.Notes.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || e.Tags.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase))
+                // Guard against Tags being null (e.g. from "tags": null in JSON)
+                || (e.Tags != null && e.Tags.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase)))
             ).ToList();
         }
     }
@@ -213,8 +214,9 @@ public sealed class StorageService
                 else
                 {
                     var bundle = JsonSerializer.Deserialize<NativeExportBundle>(json, JsonOpts);
-                    if (bundle?.Entries is List<KeyValueEntry> bundleEntries)
-                        result = bundleEntries;
+                    // Use null-coalescing: bundle.Entries could be null when JSON
+                    // has "entries": null (WhenWritingNull only guards writes, not reads).
+                    result = bundle?.Entries ?? [];
                 }
 
                 if (result is not null)
@@ -244,7 +246,7 @@ public sealed class StorageService
     ///   .backup.2 ← .backup.1 ← .backup (newest) ← current
     /// Preserves the last 3 states beyond the current live file.
     /// </summary>
-    private static void WriteJsonRotating<T>(string path, T value)
+    private static void WriteJsonRotating(string path, List<KeyValueEntry> entries)
     {
         // Rotate existing backups before overwriting.
         var b1 = path + ".backup";
@@ -257,7 +259,7 @@ public sealed class StorageService
 
         // Write atomically via a temp file then rename.
         var tmp = path + ".tmp";
-        var bundle = new NativeExportBundle { Entries = (List<KeyValueEntry>)(object)value! };
+        var bundle = new NativeExportBundle { Entries = entries };
         File.WriteAllText(tmp, JsonSerializer.Serialize(bundle, JsonOpts));
         File.Move(tmp, path, overwrite: true);
     }

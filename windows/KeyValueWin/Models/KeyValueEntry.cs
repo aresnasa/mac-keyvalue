@@ -53,7 +53,7 @@ public class KeyValueEntry
         _           => "Other"
     };
 
-    public bool HasValue => EncryptedValue.Length >= 28;
+    public bool HasValue => (EncryptedValue?.Length ?? 0) >= 28;
 }
 
 // ── Export bundle (mirrors Swift NativeExportBundle) ─────────────────────────
