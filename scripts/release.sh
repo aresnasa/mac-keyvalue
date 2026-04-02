@@ -685,18 +685,18 @@ push_winget_pr() {
 
     local wg_tmpdir; wg_tmpdir="$(mktemp -d)"
 
-    info "Cloning ${WINGET_PKGS_FORK} (shallow)…"
+    info "Cloning ${WINGET_PKGS_FORK} (shallow, no-checkout)…"
+    # Use --no-checkout to avoid downloading any blobs from this massive repo
+    # (the manifests/ tree alone contains hundreds of thousands of files).
     gh repo clone "${WINGET_PKGS_FORK}" "$wg_tmpdir" -- \
-        --depth 1 --filter=blob:none --sparse 2>&1 \
+        --depth 1 --filter=blob:none --sparse --no-checkout 2>&1 \
         | while IFS= read -r line; do info "$line"; done
 
-    # Sparse-checkout: only the path we need + the manifests root
-    git -C "$wg_tmpdir" sparse-checkout set "manifests" 2>&1 | \
-        while IFS= read -r line; do info "$line"; done
+    # Do NOT run sparse-checkout set: it fetches all blobs under manifests/
+    # which is ~500k files and will hang indefinitely on slow connections.
+    # We only need to ADD new files, so we skip checking out anything.
 
-    # Branch directly from the fork's current HEAD — no upstream fetch needed.
-    # The fork may lag upstream by a few commits but that is fine for a PR
-    # that only adds new manifest files; GitHub will auto-merge.
+    # Create branch from the (empty-checkout) HEAD.
     git -C "$wg_tmpdir" checkout -b "$branch" 2>&1 | \
         while IFS= read -r line; do info "$line"; done
 
