@@ -197,8 +197,15 @@ EOF
 # ══════════════════════════════════════════════════════════════════════════════
 verify_dmgs_from_github() {
     local tag="$1" tmpdir="$2"
-    local curl_common=(--retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 20 --max-time 180)
+    local curl_common=(--retry 2 --retry-delay 2 --retry-all-errors --connect-timeout 10 --max-time 45)
     local network_error=false
+
+    # Fast preflight: if GitHub itself is unreachable, fail fast instead of
+    # waiting through per-asset retries/timeouts.
+    if ! curl -fsSIL --connect-timeout 8 --max-time 12 https://github.com >/dev/null 2>&1; then
+        warn "GitHub connectivity check failed (github.com unreachable)"
+        return 2
+    fi
 
     HAS_UNIVERSAL=false; SHA256_UNIVERSAL=""
     HAS_ARM=false;       SHA256_ARM=""
@@ -678,6 +685,7 @@ UNIVERSAL=false   # --universal: build & publish a single arm64+x86_64 fat DMG
 SKIP_WINGET=false # --skip-winget: skip winget manifest PR
 BUILD_WINDOWS=false
 WINDOWS_PACKAGE_MODE="auto" # auto | exe | msi | both
+RELEASE_PROXY=""
 
 show_help() {
     cat <<'EOF'
@@ -702,6 +710,7 @@ show_help() {
 ║    --universal      Build & publish universal (arm64+x86_64) ║
 ║    --build-windows  Build Windows package(s) locally          ║
 ║    --windows-package MODE (auto|exe|msi|both)               ║
+║    --proxy URL      Use HTTP(S) proxy for curl/gh operations ║
 ║    --help           Show this help                           ║
 ║                                                              ║
 ║  EXAMPLES                                                    ║
@@ -711,6 +720,7 @@ show_help() {
 ║    ./scripts/release.sh 0.1.1 --fix-sha                      ║
 ║    ./scripts/release.sh 1.0.0 --skip-winget                  ║
 ║    ./scripts/release.sh 1.2.0 --build-windows --windows-package both ║
+║    ./scripts/release.sh 1.2.0 --proxy http://127.0.0.1:7890  ║
 ║                                                              ║
 ║  RELEASE PIPELINE                                            ║
 ║    STEP 1 – Build macOS DMG (via MacKeyValue/build.sh)       ║
@@ -754,10 +764,16 @@ EOF
 }
 
 EXPECT_WINDOWS_MODE=false
+EXPECT_PROXY=false
 for arg in "$@"; do
     if $EXPECT_WINDOWS_MODE; then
         WINDOWS_PACKAGE_MODE="$arg"
         EXPECT_WINDOWS_MODE=false
+        continue
+    fi
+    if $EXPECT_PROXY; then
+        RELEASE_PROXY="$arg"
+        EXPECT_PROXY=false
         continue
     fi
 
@@ -770,6 +786,12 @@ for arg in "$@"; do
         --universal)  UNIVERSAL=true ;;
         --skip-winget) SKIP_WINGET=true ;;
         --build-windows) BUILD_WINDOWS=true ;;
+        --proxy=*)
+            RELEASE_PROXY="${arg#*=}"
+            ;;
+        --proxy)
+            EXPECT_PROXY=true
+            ;;
         --windows-package=*)
             WINDOWS_PACKAGE_MODE="${arg#*=}"
             ;;
@@ -795,6 +817,18 @@ done
 
 if $EXPECT_WINDOWS_MODE; then
     fail "--windows-package requires a value: auto|exe|msi|both"
+fi
+if $EXPECT_PROXY; then
+    fail "--proxy requires a value, e.g. --proxy http://127.0.0.1:7890"
+fi
+
+if [ -n "$RELEASE_PROXY" ]; then
+    export http_proxy="$RELEASE_PROXY"
+    export https_proxy="$RELEASE_PROXY"
+    export HTTP_PROXY="$RELEASE_PROXY"
+    export HTTPS_PROXY="$RELEASE_PROXY"
+    export all_proxy="$RELEASE_PROXY"
+    export ALL_PROXY="$RELEASE_PROXY"
 fi
 
 if [ -z "$VERSION" ]; then
@@ -961,6 +995,7 @@ echo -e "  ${DIM}Skip brew:${RESET}    $($SKIP_BREW && echo "yes" || echo "no")"
 echo -e "  ${DIM}Skip winget:${RESET}  $($SKIP_WINGET && echo "yes" || echo "no")"
 echo -e "  ${DIM}Win mode:${RESET}     ${WINDOWS_PACKAGE_MODE}"
 echo -e "  ${DIM}Build win:${RESET}    $($BUILD_WINDOWS && echo "yes" || echo "no")"
+echo -e "  ${DIM}Proxy:${RESET}        ${RELEASE_PROXY:-<from env or none>}"
 echo ""
 
 # ══════════════════════════════════════════════════════════════════════════════
