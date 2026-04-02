@@ -1115,8 +1115,23 @@ else
         git -C "$PROJECT_ROOT" commit -m "release: ${TAG}" || true
     fi
 
-    git -C "$PROJECT_ROOT" push origin main 2>&1 \
-        || warn "Push to main skipped (already up to date)"
+    PUSH_BRANCH="$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD)"
+    if [ "$PUSH_BRANCH" = "HEAD" ]; then
+        fail "Detached HEAD detected. Check out a branch before running release.sh"
+    fi
+
+    PUSH_OUTPUT=""
+    if ! PUSH_OUTPUT="$(git -C "$PROJECT_ROOT" push origin "$PUSH_BRANCH" 2>&1)"; then
+        echo "$PUSH_OUTPUT"
+        if echo "$PUSH_OUTPUT" | grep -qiE 'non-fast-forward|\[rejected\]'; then
+            fail "Push to origin/${PUSH_BRANCH} rejected (non-fast-forward). Run: git pull --rebase origin ${PUSH_BRANCH}, resolve conflicts if any, then rerun release.sh"
+        fi
+        fail "Push to origin/${PUSH_BRANCH} failed. Resolve git errors and rerun release.sh"
+    fi
+
+    if [ -n "$PUSH_OUTPUT" ]; then
+        info "$PUSH_OUTPUT"
+    fi
 
     git -C "$PROJECT_ROOT" tag -a "$TAG" -m "$TAG_MESSAGE"
     git -C "$PROJECT_ROOT" push origin "$TAG"
