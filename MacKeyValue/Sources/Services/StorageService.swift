@@ -473,6 +473,23 @@ final class StorageService {
             if data.isEmpty { return nil }
             return try decoder.decode(T.self, from: data)
         } catch let decodingError as DecodingError {
+            // Log exactly which field caused the failure so we can diagnose
+            // schema-migration issues without needing a debugger.
+            let detail: String
+            switch decodingError {
+            case .keyNotFound(let key, let ctx):
+                detail = "keyNotFound(\(key.stringValue)) @ \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+            case .typeMismatch(let type, let ctx):
+                detail = "typeMismatch(\(type)) @ \(ctx.codingPath.map(\.stringValue).joined(separator: ".")): \(ctx.debugDescription)"
+            case .valueNotFound(let type, let ctx):
+                detail = "valueNotFound(\(type)) @ \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+            case .dataCorrupted(let ctx):
+                detail = "dataCorrupted @ \(ctx.codingPath.map(\.stringValue).joined(separator: ".")): \(ctx.debugDescription)"
+            @unknown default:
+                detail = decodingError.localizedDescription
+            }
+            print("[StorageService] ❌ Decode error in \(fileName): \(detail)")
+
             // Primary file is corrupted — try backups in order (newest first).
             let backupCandidates = [
                 url.appendingPathExtension("backup"),
@@ -492,7 +509,7 @@ final class StorageService {
                 return decoded
             }
             throw StorageError.decodingFailed(
-                "Failed to decode \(fileName): \(decodingError.localizedDescription)"
+                "Failed to decode \(fileName): \(detail)"
             )
         } catch {
             throw StorageError.fileReadFailed(error.localizedDescription)

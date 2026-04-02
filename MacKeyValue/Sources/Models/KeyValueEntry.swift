@@ -89,23 +89,31 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
 
     /// Custom decoder that tolerates entries saved by older app versions that
     /// lacked certain fields (e.g. `url`, `usageCount`, `notes`).
-    /// Any missing key falls back to the same default used in `init(...)`.
+    ///
+    /// Uses `try?` wrapping for every non-essential field so that a type
+    /// mismatch (e.g. unknown enum value, unexpected null, legacy number
+    /// stored as string) silently falls back to a safe default rather than
+    /// crashing the entire load.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id            = try c.decode(UUID.self,    forKey: .id)
-        title         = try c.decode(String.self,  forKey: .title)
-        key           = try c.decode(String.self,  forKey: .key)
-        url           = try c.decodeIfPresent(String.self,  forKey: .url)           ?? ""
-        encryptedValue = try c.decode(Data.self,   forKey: .encryptedValue)
-        category      = try c.decodeIfPresent(Category.self, forKey: .category)     ?? .other
-        tags          = try c.decodeIfPresent([String].self, forKey: .tags)          ?? []
-        isPrivate     = try c.decodeIfPresent(Bool.self, forKey: .isPrivate)         ?? false
-        isFavorite    = try c.decodeIfPresent(Bool.self, forKey: .isFavorite)        ?? false
-        createdAt     = try c.decodeIfPresent(Date.self, forKey: .createdAt)         ?? Date()
-        updatedAt     = try c.decodeIfPresent(Date.self, forKey: .updatedAt)         ?? Date()
-        lastUsedAt    = try c.decodeIfPresent(Date.self, forKey: .lastUsedAt)
-        usageCount    = try c.decodeIfPresent(Int.self,  forKey: .usageCount)        ?? 0
-        notes         = try c.decodeIfPresent(String.self, forKey: .notes)           ?? ""
+
+        // Required fields — these must always be present and valid.
+        id            = try c.decode(UUID.self,  forKey: .id)
+        title         = try c.decode(String.self, forKey: .title)
+        key           = try c.decode(String.self, forKey: .key)
+        encryptedValue = try c.decode(Data.self,  forKey: .encryptedValue)
+
+        // Optional / version-dependent fields — silently use defaults on any failure.
+        url           = (try? c.decodeIfPresent(String.self,   forKey: .url))        ?? ""
+        category      = (try? c.decodeIfPresent(Category.self, forKey: .category))   ?? .other
+        tags          = (try? c.decodeIfPresent([String].self,  forKey: .tags))       ?? []
+        isPrivate     = (try? c.decodeIfPresent(Bool.self,      forKey: .isPrivate))  ?? false
+        isFavorite    = (try? c.decodeIfPresent(Bool.self,      forKey: .isFavorite)) ?? false
+        createdAt     = (try? c.decodeIfPresent(Date.self,      forKey: .createdAt))  ?? Date()
+        updatedAt     = (try? c.decodeIfPresent(Date.self,      forKey: .updatedAt))  ?? Date()
+        lastUsedAt    = (try? c.decodeIfPresent(Date.self,      forKey: .lastUsedAt)) ?? nil
+        usageCount    = (try? c.decodeIfPresent(Int.self,       forKey: .usageCount)) ?? 0
+        notes         = (try? c.decodeIfPresent(String.self,    forKey: .notes))      ?? ""
     }
 
     // MARK: - Mutating Helpers
