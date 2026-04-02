@@ -273,15 +273,36 @@ open Package.swift
 
 ### Release
 
-The release script automates the full cycle: build DMG → git tag → GitHub Release → Homebrew tap update.
+The release script automates the full cycle: build artifacts, create tag, publish GitHub Release, update Homebrew (when enabled), and submit winget manifest updates (when enabled).
 
 ```bash
-./scripts/release.sh 1.2.0              # Release v1.2.0
-./scripts/release.sh 1.2.0 --dry-run    # Preview without publishing
-./scripts/release.sh 1.2.0 --skip-brew  # Skip Homebrew update
+./scripts/release.sh 1.2.0                                  # Standard release
+./scripts/release.sh 1.2.0 --dry-run                        # Preview only
+./scripts/release.sh 1.2.0 --skip-brew                      # Skip Homebrew update
+./scripts/release.sh 1.2.0 --skip-winget                    # Skip winget PR
+./scripts/release.sh 1.2.0 --force                          # Overwrite existing same-version tag/release
+
+# Windows artifacts (EXE + MSI) and publish to GitHub Release assets
+./scripts/release.sh 1.2.0 --build-windows --windows-package both
+
+# Publish Windows-only assets already prepared in windows/dist/
+./scripts/release.sh 1.2.0 --windows-package both --skip-build --skip-brew
+
+# Publish EXE only
+./scripts/release.sh 1.2.0 --windows-package exe --skip-build --skip-brew
 ```
 
 Prerequisites: `gh` CLI authenticated (`gh auth login`).
+
+Release options overview:
+
+- `--dry-run`: Show all actions without changing git tags or GitHub Releases.
+- `--skip-build`: Skip macOS build step and use existing files.
+- `--build-windows`: Build Windows artifacts locally before release.
+- `--windows-package auto|exe|msi|both`: Control which Windows assets must be included.
+- `--skip-brew`: Skip Homebrew tap update.
+- `--skip-winget`: Skip winget manifest PR.
+- `--force`: Replace an existing same-version tag/release.
 
 ---
 
