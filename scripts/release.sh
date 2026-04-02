@@ -694,12 +694,10 @@ push_winget_pr() {
     git -C "$wg_tmpdir" sparse-checkout set "manifests" 2>&1 | \
         while IFS= read -r line; do info "$line"; done
 
-    # Sync fork master with upstream before branching
-    git -C "$wg_tmpdir" remote add upstream \
-        "https://github.com/microsoft/winget-pkgs.git" 2>/dev/null || true
-    git -C "$wg_tmpdir" fetch upstream master --depth 1 2>&1 | \
-        while IFS= read -r line; do info "$line"; done
-    git -C "$wg_tmpdir" checkout -b "$branch" "upstream/master" 2>&1 | \
+    # Branch directly from the fork's current HEAD — no upstream fetch needed.
+    # The fork may lag upstream by a few commits but that is fine for a PR
+    # that only adds new manifest files; GitHub will auto-merge.
+    git -C "$wg_tmpdir" checkout -b "$branch" 2>&1 | \
         while IFS= read -r line; do info "$line"; done
 
     # Write manifests
