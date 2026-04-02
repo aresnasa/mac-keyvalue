@@ -215,6 +215,38 @@ EOF
     return 0
 }
 
+build_other_macos_dmg() {
+    local version="$1"
+    local primary_arch_name="$2"
+    local target_arch=""
+    local target_label=""
+
+    if [ "$primary_arch_name" = "apple-silicon" ]; then
+        target_arch="x86_64"
+        target_label="intel"
+    elif [ "$primary_arch_name" = "intel" ]; then
+        target_arch="arm64"
+        target_label="apple-silicon"
+    else
+        return 0
+    fi
+
+    local target_dmg="${DIST_DIR}/${APP_NAME}-${version}-${target_label}.dmg"
+    if [ -f "$target_dmg" ]; then
+        info "Other-arch DMG already present: $(basename "$target_dmg")"
+        return 0
+    fi
+
+    step "Building additional macOS DMG for ${target_label}"
+    (
+        cd "${PROJECT_ROOT}/MacKeyValue"
+        MARKETING_VERSION="$version" bash build.sh --ci --dmg --target-arch "$target_arch"
+    )
+
+    [ -f "$target_dmg" ] || fail "Other-arch DMG not found after cross-build: $target_dmg"
+    success "Additional macOS DMG built: $(basename "$target_dmg")"
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  Helper: verify_dmgs_from_github
 #
@@ -718,6 +750,7 @@ SKIP_WINGET=false # --skip-winget: skip winget manifest PR
 BUILD_WINDOWS=false
 WINDOWS_PACKAGE_MODE="auto" # auto | exe | msi | both
 RELEASE_PROXY=""
+AUTO_UNIVERSAL=false
 
 show_help() {
     cat <<'EOF'
@@ -782,6 +815,8 @@ show_help() {
 ║    • brew style is validated & auto-fixed before commit.     ║
 ║    • brew fetch is run after push to confirm end-to-end.     ║
 ║    • Pre-releases skip Homebrew and winget automatically.    ║
+║    • Homebrew releases auto-prefer a universal DMG so Intel  ║
+║      and Apple Silicon can share one cask artifact.          ║
 ║    • winget PR requires your fork of microsoft/winget-pkgs;  ║
 ║      gh CLI will auto-fork if it doesn't exist.              ║
 ║                                                              ║
@@ -893,6 +928,14 @@ fi
 # Detect pre-release suffix
 if echo "$VERSION" | grep -qE -e '-(alpha|beta|rc|dev)'; then
     PRERELEASE=true
+fi
+
+# Homebrew cask should ideally serve both Apple Silicon and Intel. When a
+# release is going to update Homebrew, prefer building a universal DMG unless
+# the user already selected otherwise.
+if ! $SKIP_BREW && ! $PRERELEASE && ! $UNIVERSAL && ! $SKIP_BUILD; then
+    UNIVERSAL=true
+    AUTO_UNIVERSAL=true
 fi
 
 TAG="v${VERSION}"
@@ -1028,6 +1071,10 @@ echo -e "  ${DIM}Skip winget:${RESET}  $($SKIP_WINGET && echo "yes" || echo "no"
 echo -e "  ${DIM}Win mode:${RESET}     ${WINDOWS_PACKAGE_MODE}"
 echo -e "  ${DIM}Build win:${RESET}    $($BUILD_WINDOWS && echo "yes" || echo "no")"
 echo -e "  ${DIM}Proxy:${RESET}        ${RELEASE_PROXY:-<from env or none>}"
+echo -e "  ${DIM}Universal:${RESET}    $($UNIVERSAL && echo "yes" || echo "no")"
+if $AUTO_UNIVERSAL; then
+    echo -e "  ${DIM}Universal mode:${RESET} auto-enabled for Homebrew compatibility"
+fi
 echo ""
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1099,6 +1146,13 @@ if ! $SKIP_BUILD; then
 
     if $DRY_RUN; then
         info "[DRY RUN] Would run: MARKETING_VERSION=${VERSION} bash build.sh ${build_flags[*]}"
+        if ! $UNIVERSAL; then
+            if [ "$ARCH_NAME" = "apple-silicon" ]; then
+                info "[DRY RUN] Would also run: MARKETING_VERSION=${VERSION} bash build.sh --ci --dmg --target-arch x86_64"
+            elif [ "$ARCH_NAME" = "intel" ]; then
+                info "[DRY RUN] Would also run: MARKETING_VERSION=${VERSION} bash build.sh --ci --dmg --target-arch arm64"
+            fi
+        fi
     else
         cd "${PROJECT_ROOT}/MacKeyValue"
         MARKETING_VERSION="$VERSION" bash build.sh "${build_flags[@]}"
@@ -1108,6 +1162,10 @@ if ! $SKIP_BUILD; then
             fail "DMG not found after build: $DMG_PATH"
         fi
         success "DMG built: $DMG_NAME"
+
+        if ! $UNIVERSAL; then
+            build_other_macos_dmg "$VERSION" "$ARCH_NAME"
+        fi
     fi
 else
     step "Skipping build (--skip-build)"

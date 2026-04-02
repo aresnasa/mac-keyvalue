@@ -7,6 +7,8 @@ set -euo pipefail
 #  Usage:
 #    ./build.sh                  # Build Release .app
 #    ./build.sh debug            # Build Debug .app
+#    ./build.sh --target-arch x86_64 --dmg  # Cross-build Intel DMG on macOS
+#    ./build.sh --target-arch arm64 --dmg   # Cross-build Apple Silicon DMG
 #    ./build.sh --win-exe        # Build Windows EXE (on Windows host)
 #    ./build.sh --win-msi        # Build Windows MSI (on Windows host)
 #    ./build.sh --win-both       # Build Windows EXE + MSI (on Windows host)
@@ -85,6 +87,7 @@ DO_CLEAN=false
 DO_CI=false
 DO_HELP=false
 BUILD_UNIVERSAL=false   # --universal: build arm64 + x86_64 and combine with lipo
+TARGET_ARCH="host"      # host | arm64 | x86_64
 WIN_PACKAGE_MODE=""      # exe | msi | both
 WIN_ONLY=false
 
@@ -98,6 +101,8 @@ for arg in "$@"; do
         --clean|-c)        DO_CLEAN=true ;;
         --ci)              DO_CI=true; DO_DMG=true ;;
         --universal)       BUILD_UNIVERSAL=true ;;
+        --target-arch=*)   TARGET_ARCH="${arg#*=}" ;;
+        --target-arch)     fail "--target-arch requires a value: host|arm64|x86_64" ;;
         --win-exe)         WIN_PACKAGE_MODE="exe" ;;
         --win-msi)         WIN_PACKAGE_MODE="msi" ;;
         --win-both)        WIN_PACKAGE_MODE="both" ;;
@@ -123,6 +128,8 @@ if $DO_HELP; then
 ║    ./build.sh debug        Build Debug .app                  ║
 ║    ./build.sh --run        Build + launch                    ║
 ║    ./build.sh --dmg        Build + package as DMG            ║
+║    ./build.sh --target-arch x86_64 --dmg  Cross-build Intel  ║
+║    ./build.sh --target-arch arm64 --dmg   Cross-build ARM    ║
 ║    ./build.sh --icons      Regenerate icons only             ║
 ║    ./build.sh --clean      Remove build artefacts            ║
 ║    ./build.sh --ci         CI mode (build + DMG, no prompts) ║
@@ -137,9 +144,11 @@ if $DO_HELP; then
 ║    SIGN_IDENTITY      Signing identity (default: ad-hoc "-") ║
 ║    MARKETING_VERSION  Version override (default: git tag)    ║
 ║    BUILD_NUMBER       Build number override                  ║
+║    --target-arch      host | arm64 | x86_64 (macOS only)    ║
 ║                                                              ║
 ║  EXAMPLES                                                    ║
 ║    ./build.sh --dmg --run                                    ║
+║    ./build.sh --target-arch x86_64 --dmg                     ║
 ║    SIGN_IDENTITY="Developer ID Application: ..." ./build.sh  ║
 ║    MARKETING_VERSION=2.0.0 ./build.sh --dmg --ci             ║
 ║                                                              ║
@@ -303,6 +312,15 @@ VERSION="$(detect_version)"
 BUILD_NUM="$(detect_build_number)"
 SIGN_ID="${SIGN_IDENTITY:--}"
 
+case "$TARGET_ARCH" in
+    host|arm64|x86_64) ;;
+    *) fail "Invalid --target-arch value: ${TARGET_ARCH} (expected: host|arm64|x86_64)" ;;
+esac
+
+if $BUILD_UNIVERSAL && [ "$TARGET_ARCH" != "host" ]; then
+    fail "--universal cannot be combined with --target-arch"
+fi
+
 if [ -n "$WIN_PACKAGE_MODE" ]; then
     if ! build_windows_packages "$WIN_PACKAGE_MODE" "$VERSION"; then
         $WIN_ONLY && fail "Windows build failed in --win-only mode"
@@ -324,6 +342,7 @@ echo -e "  ${DIM}Config:    ${RESET}${CONFIG}"
 echo -e "  ${DIM}Sign:      ${RESET}$([ "$SIGN_ID" = "-" ] && echo "ad-hoc" || echo "$SIGN_ID")"
 echo -e "  ${DIM}DMG:       ${RESET}$(${DO_DMG} && echo "yes" || echo "no")"
 echo -e "  ${DIM}CI mode:   ${RESET}$(${DO_CI} && echo "yes" || echo "no")"
+echo -e "  ${DIM}Target:    ${RESET}${TARGET_ARCH}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  STEP 1: Swift Build
@@ -331,6 +350,23 @@ echo -e "  ${DIM}CI mode:   ${RESET}$(${DO_CI} && echo "yes" || echo "no")"
 
 SWIFT_CONFIG="release"
 [ "$CONFIG" = "Debug" ] && SWIFT_CONFIG="debug"
+
+TARGET_TRIPLE=""
+TARGET_ARCH_LABEL=""
+case "$TARGET_ARCH" in
+    host)
+        HOST_ARCH="$(uname -m)"
+        TARGET_ARCH_LABEL="$HOST_ARCH"
+        ;;
+    arm64)
+        TARGET_TRIPLE="arm64-apple-macosx${MIN_MACOS}"
+        TARGET_ARCH_LABEL="arm64"
+        ;;
+    x86_64)
+        TARGET_TRIPLE="x86_64-apple-macosx${MIN_MACOS}"
+        TARGET_ARCH_LABEL="x86_64"
+        ;;
+esac
 
 if $BUILD_UNIVERSAL; then
     step "Building Universal Binary (arm64 + x86_64)"
@@ -361,6 +397,19 @@ if $BUILD_UNIVERSAL; then
     lipo -create "$ARM_EXEC" "$X86_EXEC" -output "$EXECUTABLE"
     ARCHS_IN_BINARY="$(lipo -archs "$EXECUTABLE")"
     success "Universal binary created (${ARCHS_IN_BINARY})"
+elif [ -n "$TARGET_TRIPLE" ]; then
+    step "Building with Swift Package Manager ($CONFIG, ${TARGET_ARCH_LABEL})"
+
+    swift build -c "$SWIFT_CONFIG" --triple "$TARGET_TRIPLE" 2>&1 | while IFS= read -r line; do
+        case "$line" in
+            *"Compiling"*|*"Linking"*|*"Build complete"*|*error*|*warning*)
+                info "[$TARGET_ARCH_LABEL] $line" ;;
+        esac
+    done
+
+    EXECUTABLE=".build/${TARGET_TRIPLE%%${MIN_MACOS}}/${SWIFT_CONFIG}/${EXECUTABLE_NAME}"
+    [ ! -f "$EXECUTABLE" ] && fail "Build failed for ${TARGET_ARCH_LABEL}: executable not found at $EXECUTABLE"
+    success "Swift build complete (${TARGET_ARCH_LABEL})"
 else
     step "Building with Swift Package Manager ($CONFIG)"
 
@@ -654,7 +703,7 @@ if $DO_DMG; then
     if $BUILD_UNIVERSAL; then
         ARCH="universal"
     else
-        ARCH="$(uname -m)"
+        ARCH="$TARGET_ARCH_LABEL"
         [ "$ARCH" = "x86_64" ] && ARCH="intel"
         [ "$ARCH" = "arm64" ]  && ARCH="apple-silicon"
     fi
