@@ -1163,7 +1163,7 @@ if ! $SKIP_BUILD; then
         fi
         success "DMG built: $DMG_NAME"
 
-        if ! $UNIVERSAL; then
+        if ! $UNIVERSAL && [ "$(uname -s)" = "Darwin" ]; then
             build_other_macos_dmg "$VERSION" "$ARCH_NAME"
         fi
     fi
@@ -1317,34 +1317,35 @@ fi
 
 step "Creating GitHub Release"
 
-RELEASE_NOTES="## ${APP_NAME} ${TAG}
+RELEASE_NOTES="$(cat <<EOF
+## ${APP_NAME} ${TAG}
 
 ### 📦 Installation
 
 #### macOS — Option 1: Homebrew (Recommended)
-\`\`\`bash
+~~~bash
 brew tap ${GITHUB_OWNER}/tap
 brew install --cask keyvalue
-\`\`\`
+~~~
 
 #### macOS — Option 2: Download DMG
-1. Download the \`.dmg\` file below
+1. Download the .dmg file below
 2. Open the DMG and drag **KeyValue.app** into **Applications**
 3. First launch: right-click KeyValue.app → select **Open**
 
 > ⚠️ This is a free, open-source app with ad-hoc signing. macOS may warn about an unverified developer on first launch — right-click → Open to bypass.
-> Alternatively: \`xattr -cr /Applications/KeyValue.app\`
+> Alternatively: xattr -cr /Applications/KeyValue.app
 
 #### Windows — Option 3: winget
-\`\`\`powershell
+~~~powershell
 winget install ${WINGET_PACKAGE_ID}
-\`\`\`
+~~~
 *(Available after the winget PR is merged into microsoft/winget-pkgs)*
 
 #### Windows — Option 4: Direct Download
 Download one of the assets below:
-- \`${WINDOWS_EXE_NAME}\` — portable single-file EXE (no installer)
-- \`${WINDOWS_MSI_NAME}\` — standard MSI installer
+- ${WINDOWS_EXE_NAME} — portable single-file EXE (no installer)
+- ${WINDOWS_MSI_NAME} — standard MSI installer
 
 ### 🔐 Permissions (macOS)
 
@@ -1361,22 +1362,24 @@ On first launch, the app will guide you through granting:
 ### ⬆️ Upgrading
 
 **Homebrew (macOS):**
-\`\`\`bash
+~~~bash
 brew update && brew upgrade --cask keyvalue
-\`\`\`
+~~~
 
 **winget (Windows):**
-\`\`\`powershell
+~~~powershell
 winget upgrade ${WINGET_PACKAGE_ID}
-\`\`\`
+~~~
 
 **DMG / Direct download** — the app auto-downloads the matching DMG, replaces itself, and restarts.
 
 ---
 
-**SHA256 (${ARCH_NAME}):** \`${LOCAL_SHA256}\`
+**SHA256 (${ARCH_NAME}):** ${LOCAL_SHA256}
 
-**License:** [MIT](https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/blob/main/LICENSE)"
+**License:** [MIT](https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/blob/main/LICENSE)
+EOF
+)"
 
 if $DRY_RUN; then
     info "[DRY RUN] Would create GitHub Release: $TAG"
