@@ -1486,7 +1486,7 @@ else
         "${ASSETS[@]}" \
         --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
         "${RELEASE_FLAGS[@]}"
-    local gh_rc=$?
+    gh_rc=$?
     rm -f "$RELEASE_NOTES_FILE"
     [ $gh_rc -ne 0 ] && fail "gh release create failed (exit $gh_rc)"
 
