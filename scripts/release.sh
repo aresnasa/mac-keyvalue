@@ -197,6 +197,8 @@ EOF
 # ══════════════════════════════════════════════════════════════════════════════
 verify_dmgs_from_github() {
     local tag="$1" tmpdir="$2"
+    local curl_common=(--retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 20 --max-time 180)
+    local network_error=false
 
     HAS_UNIVERSAL=false; SHA256_UNIVERSAL=""
     HAS_ARM=false;       SHA256_ARM=""
@@ -206,36 +208,60 @@ verify_dmgs_from_github() {
     local url_arm="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${tag}/${APP_NAME}-${VERSION}-apple-silicon.dmg"
     local url_intel="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${tag}/${APP_NAME}-${VERSION}-intel.dmg"
 
+    local err_univ="${tmpdir}/curl-universal.err"
+    local err_arm="${tmpdir}/curl-arm.err"
+    local err_intel="${tmpdir}/curl-intel.err"
+
     info "Downloading universal DMG from GitHub Release…"
-    if curl -fsSL --progress-bar -o "${tmpdir}/universal.dmg" "$url_univ" 2>&1; then
+    if curl -fsSL "${curl_common[@]}" --progress-bar -o "${tmpdir}/universal.dmg" "$url_univ" 2>"$err_univ"; then
         SHA256_UNIVERSAL="$(shasum -a 256 "${tmpdir}/universal.dmg" | awk '{print $1}')"
         HAS_UNIVERSAL=true
         success "SHA256 (universal): $SHA256_UNIVERSAL"
     else
-        warn "Universal DMG not found in release ${tag} — checking arch-specific DMGs"
+        if grep -qiE 'Couldn.t connect|Failed to connect|timed out|HTTP2 framing|Connection reset|SSL|network' "$err_univ"; then
+            network_error=true
+            warn "Universal DMG download failed due to network issues"
+        else
+            warn "Universal DMG not found in release ${tag} — checking arch-specific DMGs"
+        fi
     fi
 
     info "Downloading ARM DMG from GitHub Release…"
-    if curl -fsSL --progress-bar -o "${tmpdir}/arm.dmg" "$url_arm" 2>&1; then
+    if curl -fsSL "${curl_common[@]}" --progress-bar -o "${tmpdir}/arm.dmg" "$url_arm" 2>"$err_arm"; then
         SHA256_ARM="$(shasum -a 256 "${tmpdir}/arm.dmg" | awk '{print $1}')"
         HAS_ARM=true
         success "SHA256 (arm64):    $SHA256_ARM"
     else
-        warn "ARM DMG not found in release ${tag} — on_arm block will be omitted"
+        if grep -qiE 'Couldn.t connect|Failed to connect|timed out|HTTP2 framing|Connection reset|SSL|network' "$err_arm"; then
+            network_error=true
+            warn "ARM DMG download failed due to network issues"
+        else
+            warn "ARM DMG not found in release ${tag} — on_arm block will be omitted"
+        fi
     fi
 
     info "Downloading Intel DMG from GitHub Release…"
-    if curl -fsSL --progress-bar -o "${tmpdir}/intel.dmg" "$url_intel" 2>&1; then
+    if curl -fsSL "${curl_common[@]}" --progress-bar -o "${tmpdir}/intel.dmg" "$url_intel" 2>"$err_intel"; then
         SHA256_INTEL="$(shasum -a 256 "${tmpdir}/intel.dmg" | awk '{print $1}')"
         HAS_INTEL=true
         success "SHA256 (x86_64):   $SHA256_INTEL"
     else
-        warn "Intel DMG not found in release ${tag} — on_intel block will be omitted"
+        if grep -qiE 'Couldn.t connect|Failed to connect|timed out|HTTP2 framing|Connection reset|SSL|network' "$err_intel"; then
+            network_error=true
+            warn "Intel DMG download failed due to network issues"
+        else
+            warn "Intel DMG not found in release ${tag} — on_intel block will be omitted"
+        fi
     fi
 
     if ! $HAS_UNIVERSAL && ! $HAS_ARM && ! $HAS_INTEL; then
-        fail "No DMGs found in GitHub Release ${tag}. Is the release published?"
+        if $network_error; then
+            return 2
+        fi
+        return 1
     fi
+
+    return 0
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -869,7 +895,14 @@ if $FIX_SHA; then
 
     step "Downloading DMGs from GitHub Release to verify SHA256"
     VTMPDIR="$(mktemp -d)"
-    verify_dmgs_from_github "$TAG" "$VTMPDIR"
+    if ! verify_dmgs_from_github "$TAG" "$VTMPDIR"; then
+        VERIFY_RC=$?
+        rm -rf "$VTMPDIR"
+        if [ "$VERIFY_RC" -eq 2 ]; then
+            fail "Cannot verify DMG SHA256 due to GitHub network/connectivity errors. Retry later or check network/proxy settings."
+        fi
+        fail "No DMGs found in GitHub Release ${TAG}. Is the release published?"
+    fi
     rm -rf "$VTMPDIR"
 
     step "Building Homebrew cask formula"
@@ -1331,11 +1364,24 @@ if ! $SKIP_BREW && ! $PRERELEASE; then
         fi
     else
         VTMPDIR="$(mktemp -d)"
-        verify_dmgs_from_github "$TAG" "$VTMPDIR"
+        if ! verify_dmgs_from_github "$TAG" "$VTMPDIR"; then
+            VERIFY_RC=$?
+            rm -rf "$VTMPDIR"
+            if [ "$VERIFY_RC" -eq 2 ]; then
+                warn "Skipping Homebrew update due to GitHub network/connectivity errors while downloading release DMGs"
+                SKIP_BREW=true
+            else
+                fail "No DMGs found in GitHub Release ${TAG}. Is the release published?"
+            fi
+        fi
         rm -rf "$VTMPDIR"
     fi
 
-    CASK_CONTENT="$(build_cask_content)"
+    if $SKIP_BREW; then
+        step "Skipping Homebrew update (network issue)"
+    else
+
+        CASK_CONTENT="$(build_cask_content)"
 
     # Build a descriptive commit message showing the actual SHA values
     BREW_COMMIT_MSG="Update keyvalue to ${VERSION}"
@@ -1362,7 +1408,8 @@ x86_64: ${SHA256_INTEL}
 Release: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/${TAG}"
     fi
 
-    push_cask_to_tap "$DRY_RUN" "$CASK_CONTENT" "$BREW_COMMIT_MSG"
+        push_cask_to_tap "$DRY_RUN" "$CASK_CONTENT" "$BREW_COMMIT_MSG"
+    fi
 
 elif $PRERELEASE; then
     step "Skipping Homebrew update (pre-release)"
