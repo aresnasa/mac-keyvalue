@@ -31,6 +31,15 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _decryptedValue = string.Empty;
     [ObservableProperty] private bool _isDecrypted;
 
+    // ── Filter / sort state (matches Mac) ─────────────────────────────────────
+
+    [ObservableProperty] private string _selectedCategory = "all";
+    [ObservableProperty] private string _selectedGroup = "all";
+    [ObservableProperty] private string _sortOrder = "date_updated_desc";
+    [ObservableProperty] private bool _showFavoritesOnly;
+    [ObservableProperty] private bool _showPrivateOnly;
+    [ObservableProperty] private bool _isPrivacyMode;
+
     // ── Recovery mode ─────────────────────────────────────────────────────────
 
     [ObservableProperty] private bool _isDataRecovery;
@@ -38,6 +47,25 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _recoveryDataFolder = string.Empty;
 
     partial void OnSearchQueryChanged(string value) => ApplyFilter();
+    partial void OnSelectedCategoryChanged(string value) => ApplyFilter();
+    partial void OnSelectedGroupChanged(string value) => ApplyFilter();
+    partial void OnSortOrderChanged(string value) => ApplyFilter();
+    partial void OnShowFavoritesOnlyChanged(bool value) => ApplyFilter();
+    partial void OnShowPrivateOnlyChanged(bool value) => ApplyFilter();
+
+    /// <summary>All distinct non-empty group names, for the Group filter dropdown.</summary>
+    public IReadOnlyList<string> AllGroups
+    {
+        get
+        {
+            return Entries
+                .Where(e => !string.IsNullOrWhiteSpace(e.Group))
+                .Select(e => e.Group)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
 
     // ── Initialization ────────────────────────────────────────────────────────
 
@@ -58,12 +86,12 @@ public partial class MainViewModel : ObservableObject
         catch (MasterKeyLostWithExistingDataException)
         {
             EnterRecoveryMode(
-                "Master encryption key is missing.\n\n" +
-                "Your encrypted data still exists on disk, but without the original DPAPI key " +
-                "the entries cannot be decrypted. Creating a new key would destroy all data.\n\n" +
-                "Options:\n" +
-                "  • Restore the master.key file from a backup\n" +
-                "  • Reset all data to start fresh (entries will be lost)");
+                "加密主密钥丢失。\n\n" +
+                "您的加密数据仍存在于磁盘上，但没有原始 DPAPI 密钥无法解密这些条目。" +
+                "创建新密钥将销毁所有数据。\n\n" +
+                "可选操作：\n" +
+                "  • 从备份恢复 master.key 文件\n" +
+                "  • 重置所有数据重新开始（条目将丢失）");
             return;
         }
 
@@ -75,11 +103,11 @@ public partial class MainViewModel : ObservableObject
         catch (StorageLoadException ex)
         {
             EnterRecoveryMode(
-                $"Data files are unreadable — all copies (including backups) are corrupt.\n\n" +
-                $"Technical detail: {ex.Message}\n\n" +
-                "Options:\n" +
-                "  • Open the data folder and restore a backup manually\n" +
-                "  • Reset all data to start fresh");
+                $"数据文件无法读取 — 所有副本（包括备份）均已损坏。\n\n" +
+                $"技术详情: {ex.Message}\n\n" +
+                "可选操作：\n" +
+                "  • 打开数据目录手动恢复备份\n" +
+                "  • 重置所有数据重新开始");
             return;
         }
 
@@ -100,7 +128,7 @@ public partial class MainViewModel : ObservableObject
     private void OpenDataFolder()
     {
         try { Process.Start("explorer.exe", StorageService.DataDirectory); }
-        catch (Exception ex) { ShowStatus($"Cannot open folder: {ex.Message}"); }
+        catch (Exception ex) { ShowStatus($"无法打开文件夹: {ex.Message}"); }
     }
 
     [RelayCommand]
@@ -115,9 +143,9 @@ public partial class MainViewModel : ObservableObject
     private void PerformDataReset()
     {
         var result = MessageBox.Show(
-            "This will permanently delete all stored entries and the master encryption key.\n\n" +
-            "This action CANNOT be undone.\n\nAre you absolutely sure?",
-            "Confirm Data Reset",
+            "这将永久删除所有已存储的条目和加密主密钥。\n\n" +
+            "此操作无法撤销。\n\n确定要继续吗？",
+            "确认数据重置",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
 
@@ -132,11 +160,11 @@ public partial class MainViewModel : ObservableObject
             Entries.Clear();
             FilteredEntries.Clear();
             Initialize();
-            ShowStatus("All data reset. A new encryption key has been created.");
+            ShowStatus("所有数据已重置，新的加密密钥已创建。");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Reset failed: {ex.Message}", "Error",
+            MessageBox.Show($"重置失败: {ex.Message}", "错误",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -145,6 +173,7 @@ public partial class MainViewModel : ObservableObject
     {
         Entries.Clear();
         foreach (var e in _storage.GetAll()) Entries.Add(e);
+        OnPropertyChanged(nameof(AllGroups));
         ApplyFilter();
     }
 
@@ -152,7 +181,42 @@ public partial class MainViewModel : ObservableObject
     {
         FilteredEntries.Clear();
         var q = SearchQuery.Trim();
-        var source = string.IsNullOrEmpty(q) ? Entries : _storage.Search(q).AsEnumerable();
+
+        // Start from search results or all entries
+        IEnumerable<KeyValueEntry> source = string.IsNullOrEmpty(q)
+            ? Entries
+            : _storage.Search(q).AsEnumerable();
+
+        // Category filter
+        if (SelectedCategory != "all")
+            source = source.Where(e => e.Category == SelectedCategory);
+
+        // Group filter
+        if (SelectedGroup != "all")
+            source = source.Where(e => e.Group.Equals(SelectedGroup, StringComparison.OrdinalIgnoreCase));
+
+        // Favorites only
+        if (ShowFavoritesOnly)
+            source = source.Where(e => e.IsFavorite);
+
+        // Private only
+        if (ShowPrivateOnly)
+            source = source.Where(e => e.IsPrivate);
+
+        // Sort
+        source = SortOrder switch
+        {
+            "title_asc"          => source.OrderBy(e => e.Title, StringComparer.OrdinalIgnoreCase),
+            "title_desc"         => source.OrderByDescending(e => e.Title, StringComparer.OrdinalIgnoreCase),
+            "date_created_desc"  => source.OrderByDescending(e => e.CreatedAt),
+            "date_created_asc"   => source.OrderBy(e => e.CreatedAt),
+            "date_updated_desc"  => source.OrderByDescending(e => e.UpdatedAt),
+            "date_updated_asc"   => source.OrderBy(e => e.UpdatedAt),
+            "usage_desc"         => source.OrderByDescending(e => e.UsageCount),
+            "usage_asc"          => source.OrderBy(e => e.UsageCount),
+            _                    => source.OrderByDescending(e => e.UpdatedAt),
+        };
+
         foreach (var e in source) FilteredEntries.Add(e);
     }
 
@@ -167,7 +231,7 @@ public partial class MainViewModel : ObservableObject
         {
             var val = _encryption.DecryptToString(SelectedEntry.EncryptedValue);
             Clipboard.SetText(val);
-            ShowStatus("Copied to clipboard");
+            ShowStatus("已复制到剪贴板");
             // Clear after 30s
             Task.Delay(30_000).ContinueWith(_ =>
                 Application.Current.Dispatcher.Invoke(() =>
@@ -175,7 +239,7 @@ public partial class MainViewModel : ObservableObject
                     if (Clipboard.GetText() == val) Clipboard.Clear();
                 }));
         }
-        catch (Exception ex) { ShowStatus($"Error: {ex.Message}"); }
+        catch (Exception ex) { ShowStatus($"错误: {ex.Message}"); }
     }
 
     [RelayCommand]
@@ -187,7 +251,7 @@ public partial class MainViewModel : ObservableObject
             DecryptedValue = _encryption.DecryptToString(SelectedEntry.EncryptedValue);
             IsDecrypted = true;
         }
-        catch (Exception ex) { ShowStatus($"Decrypt failed: {ex.Message}"); }
+        catch (Exception ex) { ShowStatus($"解密失败: {ex.Message}"); }
     }
 
     [RelayCommand]
@@ -201,13 +265,13 @@ public partial class MainViewModel : ObservableObject
     private void DeleteEntry()
     {
         if (SelectedEntry is null) return;
-        if (MessageBox.Show($"Delete '{SelectedEntry.Title}'?", "Confirm",
+        if (MessageBox.Show($"确定删除 '{SelectedEntry.Title}'?", "确认",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         _storage.Delete(SelectedEntry.Id);
         ReloadEntries();
         SelectedEntry = null;
         IsDecrypted = false;
-        ShowStatus("Entry deleted");
+        ShowStatus("条目已删除");
     }
 
     [RelayCommand]
@@ -217,7 +281,33 @@ public partial class MainViewModel : ObservableObject
         SelectedEntry.IsFavorite = !SelectedEntry.IsFavorite;
         _storage.Upsert(SelectedEntry);
         ReloadEntries();
-        ShowStatus(SelectedEntry.IsFavorite ? "Added to favorites" : "Removed from favorites");
+        ShowStatus(SelectedEntry.IsFavorite ? "已添加收藏" : "已取消收藏");
+    }
+
+    [RelayCommand]
+    private void CopyKey()
+    {
+        if (SelectedEntry is null || string.IsNullOrEmpty(SelectedEntry.Key)) return;
+        Clipboard.SetText(SelectedEntry.Key);
+        ShowStatus("用户名已复制到剪贴板");
+    }
+
+    [RelayCommand]
+    private void TogglePrivacyMode()
+    {
+        IsPrivacyMode = !IsPrivacyMode;
+        ShowStatus(IsPrivacyMode ? "隐私模式已开启" : "隐私模式已关闭");
+    }
+
+    [RelayCommand]
+    private void ResetFilters()
+    {
+        SearchQuery = string.Empty;
+        SelectedCategory = "all";
+        SelectedGroup = "all";
+        ShowFavoritesOnly = false;
+        ShowPrivateOnly = false;
+        SortOrder = "date_updated_desc";
     }
 
     // ── Import ────────────────────────────────────────────────────────────────
@@ -227,9 +317,9 @@ public partial class MainViewModel : ObservableObject
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Import Entries",
-            Filter = "All Supported|*.json;*.csv;*.txt;*.mkve|MacKeyValue JSON|*.json|" +
-                     "MacKeyValue Encrypted|*.mkve|CSV|*.csv;*.txt|All Files|*.*"
+            Title = "导入条目",
+            Filter = "所有支持格式|*.json;*.csv;*.txt;*.mkve|MacKeyValue JSON|*.json|" +
+                     "MacKeyValue 加密文件|*.mkve|CSV|*.csv;*.txt|所有文件|*.*"
         };
         if (dlg.ShowDialog() != true) return;
 
@@ -237,7 +327,7 @@ public partial class MainViewModel : ObservableObject
         var ext = Path.GetExtension(dlg.FileName).ToLowerInvariant();
         if (ext == ".mkve")
         {
-            var pwdDlg = new Views.PasswordDialog("Enter export password:");
+            var pwdDlg = new Views.PasswordDialog("请输入导出密码:");
             if (pwdDlg.ShowDialog() != true) return;
             password = pwdDlg.Password;
         }
@@ -249,7 +339,7 @@ public partial class MainViewModel : ObservableObject
             ReloadEntries();
             ShowStatus(summary);
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Import Error", MessageBoxButton.OK, MessageBoxImage.Error); }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "导入错误", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -265,7 +355,7 @@ public partial class MainViewModel : ObservableObject
     {
         var dlg = new SaveFileDialog
         {
-            Title = "Export as CSV",
+            Title = "导出为 CSV",
             Filter = "CSV|*.csv",
             FileName = $"mackeyvalue-export-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
         };
@@ -273,9 +363,9 @@ public partial class MainViewModel : ObservableObject
         try
         {
             File.WriteAllBytes(dlg.FileName, _impexp.ExportToCsv(_storage.GetAll()));
-            ShowStatus($"Exported {_storage.Count} entries to CSV");
+            ShowStatus($"已导出 {_storage.Count} 条记录到 CSV");
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Export Error", MessageBoxButton.OK, MessageBoxImage.Error); }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "导出错误", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
     private void DoExport(bool encrypted)
@@ -283,15 +373,15 @@ public partial class MainViewModel : ObservableObject
         string? password = null;
         if (encrypted)
         {
-            var pwdDlg = new Views.PasswordDialog("Set export password (required to import):");
+            var pwdDlg = new Views.PasswordDialog("设置导出密码（导入时需要）:");
             if (pwdDlg.ShowDialog() != true) return;
             password = pwdDlg.Password;
         }
         var ext = encrypted ? "mkve" : "json";
         var dlg = new SaveFileDialog
         {
-            Title  = encrypted ? "Export Encrypted" : "Export JSON",
-            Filter = encrypted ? "Encrypted|*.mkve" : "JSON|*.json",
+            Title  = encrypted ? "导出加密文件" : "导出 JSON",
+            Filter = encrypted ? "加密文件|*.mkve" : "JSON|*.json",
             FileName = $"mackeyvalue-export-{DateTime.Now:yyyyMMdd-HHmmss}.{ext}"
         };
         if (dlg.ShowDialog() != true) return;
@@ -301,9 +391,9 @@ public partial class MainViewModel : ObservableObject
                 ? _impexp.ExportToEncryptedJson(_storage.GetAll(), password)
                 : _impexp.ExportToJson(_storage.GetAll());
             File.WriteAllBytes(dlg.FileName, data);
-            ShowStatus($"Exported {_storage.Count} entries");
+            ShowStatus($"已导出 {_storage.Count} 条记录");
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Export Error", MessageBoxButton.OK, MessageBoxImage.Error); }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "导出错误", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
     // ── Status ────────────────────────────────────────────────────────────────

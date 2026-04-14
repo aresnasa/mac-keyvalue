@@ -248,10 +248,12 @@ struct SidebarView: View {
                     count: viewModel.entries.count,
                     isSelected: viewModel.filterState.selectedCategory == nil
                         && !viewModel.filterState.showFavoritesOnly
+                        && viewModel.filterState.selectedGroup == nil
                 ) {
                     viewModel.filterState.selectedCategory = nil
                     viewModel.filterState.showFavoritesOnly = false
                     viewModel.filterState.showPrivateOnly = false
+                    viewModel.filterState.selectedGroup = nil
                 }
 
                 // Favorites
@@ -265,6 +267,7 @@ struct SidebarView: View {
                     viewModel.filterState.showFavoritesOnly = true
                     viewModel.filterState.selectedCategory = nil
                     viewModel.filterState.showPrivateOnly = false
+                    viewModel.filterState.selectedGroup = nil
                 }
 
                 // Each category
@@ -279,6 +282,7 @@ struct SidebarView: View {
                         viewModel.filterState.selectedCategory = category
                         viewModel.filterState.showFavoritesOnly = false
                         viewModel.filterState.showPrivateOnly = false
+                        viewModel.filterState.selectedGroup = nil
                     }
                 }
             }
@@ -294,6 +298,27 @@ struct SidebarView: View {
                     viewModel.filterState.showPrivateOnly = true
                     viewModel.filterState.showFavoritesOnly = false
                     viewModel.filterState.selectedCategory = nil
+                    viewModel.filterState.selectedGroup = nil
+                }
+            }
+
+            if !viewModel.allGroups.isEmpty {
+                Section("分组") {
+                    ForEach(viewModel.allGroups, id: \.self) { group in
+                        let count = viewModel.entries.filter { $0.group == group }.count
+                        sidebarRow(
+                            title: group,
+                            icon: "folder.fill",
+                            count: count,
+                            isSelected: viewModel.filterState.selectedGroup == group,
+                            tintColor: .cyan
+                        ) {
+                            viewModel.filterState.selectedGroup = group
+                            viewModel.filterState.selectedCategory = nil
+                            viewModel.filterState.showFavoritesOnly = false
+                            viewModel.filterState.showPrivateOnly = false
+                        }
+                    }
                 }
             }
 
@@ -476,6 +501,20 @@ struct EntryListView: View {
             viewModel.togglePrivate(id: entry.id)
         }
 
+        Menu("分组") {
+            Button(entry.group.isEmpty ? "✓ 无分组" : "无分组") {
+                viewModel.setEntryGroup(id: entry.id, group: "")
+            }
+            if !viewModel.allGroups.isEmpty {
+                Divider()
+                ForEach(viewModel.allGroups, id: \.self) { group in
+                    Button(entry.group == group ? "✓ \(group)" : group) {
+                        viewModel.setEntryGroup(id: entry.id, group: group)
+                    }
+                }
+            }
+        }
+
         Divider()
 
         Button("删除", role: .destructive) {
@@ -510,6 +549,18 @@ struct EntryRowView: View {
                     Image(systemName: "lock.fill")
                         .font(.caption2)
                         .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
+                }
+
+                if !entry.group.isEmpty {
+                    Text(entry.group)
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule()
+                                .fill(Color.cyan.opacity(0.15))
+                        )
+                        .foregroundStyle(.cyan)
                 }
 
                 Spacer()
@@ -610,6 +661,16 @@ struct EntryDetailView: View {
                             Text(entry.category.displayName)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                            if !entry.group.isEmpty {
+                                Label(entry.group, systemImage: "folder.fill")
+                                    .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule().fill(Color.cyan.opacity(0.15))
+                                    )
+                                    .foregroundStyle(.cyan)
+                            }
                         }
 
                         Spacer(minLength: 0)
@@ -1269,6 +1330,16 @@ struct EntryEditorSheet: View {
                 }
 
                 TextField("标签（逗号分隔）", text: $viewModel.editingTags)
+                TextField("分组", text: $viewModel.editingGroup)
+                    .textFieldStyle(.roundedBorder)
+                if !viewModel.allGroups.isEmpty {
+                    Picker("已有分组", selection: $viewModel.editingGroup) {
+                        Text("无").tag("")
+                        ForEach(viewModel.allGroups, id: \.self) { group in
+                            Text(group).tag(group)
+                        }
+                    }
+                }
                 TextEditor(text: $viewModel.editingNotes)
                     .frame(minHeight: 40)
 

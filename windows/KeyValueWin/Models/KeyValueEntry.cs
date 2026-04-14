@@ -25,6 +25,7 @@ public class KeyValueEntry
     [JsonPropertyName("encryptedValue")] public byte[] EncryptedValue { get; set; } = [];
     [JsonPropertyName("category")]       public string Category       { get; set; } = "other";
     [JsonPropertyName("tags")]           public List<string> Tags     { get; set; } = [];
+    [JsonPropertyName("group")]          public string Group          { get; set; } = string.Empty;
     [JsonPropertyName("isPrivate")]      public bool   IsPrivate      { get; set; }
     [JsonPropertyName("isFavorite")]     public bool   IsFavorite     { get; set; }
     [JsonPropertyName("createdAt")]      public string CreatedAt      { get; set; } = DateTime.UtcNow.ToString("O");
@@ -46,12 +47,14 @@ public class KeyValueEntry
 
     public string CategoryDisplayName => Category switch
     {
-        "password"  => "Password",
-        "snippet"   => "Snippet",
-        "clipboard" => "Clipboard",
-        "command"   => "Command",
-        _           => "Other"
+        "password"  => "密码",
+        "snippet"   => "代码片段",
+        "clipboard" => "剪贴板",
+        "command"   => "命令",
+        _           => "其他"
     };
+
+    public bool HasGroup => !string.IsNullOrWhiteSpace(Group);
 
     public bool HasValue => (EncryptedValue?.Length ?? 0) >= 28;
 }

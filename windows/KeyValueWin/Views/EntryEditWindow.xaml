@@ -12,7 +12,7 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <TextBlock Grid.Row="0" x:Name="TitleLabel" Text="New Entry"
+    <TextBlock Grid.Row="0" x:Name="TitleLabel" Text="新建条目"
                FontSize="20" FontWeight="Bold"
                Foreground="{StaticResource TextPrimary}" Margin="0,0,0,20"/>
 
@@ -20,19 +20,19 @@
       <StackPanel h:StackPanelHelper.Spacing="14">
 
         <StackPanel h:StackPanelHelper.Spacing="5">
-          <TextBlock Text="Title *" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="标题 *" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <TextBox x:Name="TxtTitle" FontSize="13"/>
         </StackPanel>
 
         <StackPanel h:StackPanelHelper.Spacing="5">
-          <TextBlock Text="Username / Account" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="用户名 / 账号" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <TextBox x:Name="TxtKey" FontSize="13"/>
         </StackPanel>
 
         <StackPanel h:StackPanelHelper.Spacing="5">
-          <TextBlock Text="Password / Value *" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="密码 / 值 *" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <Grid>
             <PasswordBox x:Name="PwdValue" FontSize="14" Padding="8,6"
@@ -40,47 +40,53 @@
             <TextBox x:Name="TxtValuePlain" FontSize="13" Visibility="Collapsed"/>
           </Grid>
           <StackPanel Orientation="Horizontal" h:StackPanelHelper.Spacing="6">
-            <CheckBox Content="Show password" x:Name="ChkShow"
+            <CheckBox Content="显示密码" x:Name="ChkShow"
                       Checked="OnShowPasswordChanged" Unchecked="OnShowPasswordChanged"
                       FontSize="11" Foreground="{StaticResource TextSecondary}"/>
           </StackPanel>
         </StackPanel>
 
         <StackPanel h:StackPanelHelper.Spacing="5">
-          <TextBlock Text="URL / Host" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="URL / 主机" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <TextBox x:Name="TxtUrl" FontSize="13"/>
         </StackPanel>
 
         <StackPanel h:StackPanelHelper.Spacing="5">
-          <TextBlock Text="Category" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="分组" FontSize="11" FontWeight="SemiBold"
+                     Foreground="{StaticResource TextSecondary}"/>
+          <TextBox x:Name="TxtGroup" FontSize="13"/>
+        </StackPanel>
+
+        <StackPanel h:StackPanelHelper.Spacing="5">
+          <TextBlock Text="分类" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <ComboBox x:Name="CboCategory" FontSize="13"
                     Padding="8,6" BorderBrush="{StaticResource BorderBrush}">
-            <ComboBoxItem Content="🔒  Password" Tag="password" IsSelected="True"/>
-            <ComboBoxItem Content="📄  Snippet"  Tag="snippet"/>
-            <ComboBoxItem Content="📋  Clipboard" Tag="clipboard"/>
-            <ComboBoxItem Content="⌨  Command"   Tag="command"/>
-            <ComboBoxItem Content="📦  Other"     Tag="other"/>
+            <ComboBoxItem Content="🔒  密码" Tag="password" IsSelected="True"/>
+            <ComboBoxItem Content="📄  代码片段"  Tag="snippet"/>
+            <ComboBoxItem Content="📋  剪贴板" Tag="clipboard"/>
+            <ComboBoxItem Content="⌨  命令"   Tag="command"/>
+            <ComboBoxItem Content="📦  其他"     Tag="other"/>
           </ComboBox>
         </StackPanel>
 
         <StackPanel h:StackPanelHelper.Spacing="5">
-          <TextBlock Text="Tags (comma-separated)" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="标签（逗号分隔）" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <TextBox x:Name="TxtTags" FontSize="13"/>
         </StackPanel>
 
         <StackPanel h:StackPanelHelper.Spacing="5">
-          <TextBlock Text="Notes" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="备注" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <TextBox x:Name="TxtNotes" FontSize="13" Height="80" TextWrapping="Wrap"
                    AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
         </StackPanel>
 
-        <CheckBox x:Name="ChkFavorite" Content="⭐  Mark as favorite"
+        <CheckBox x:Name="ChkFavorite" Content="⭐  标记为收藏"
                   FontSize="13" Foreground="{StaticResource TextPrimary}"/>
-        <CheckBox x:Name="ChkPrivate"  Content="🔒  Private entry"
+        <CheckBox x:Name="ChkPrivate"  Content="🔒  私密条目"
                   FontSize="13" Foreground="{StaticResource TextPrimary}"/>
       </StackPanel>
     </ScrollViewer>
@@ -88,9 +94,9 @@
     <!-- Buttons -->
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"
                 h:StackPanelHelper.Spacing="8" Margin="0,16,0,0">
-      <Button Content="Cancel" Style="{StaticResource SecondaryButton}"
+      <Button Content="取消" Style="{StaticResource SecondaryButton}"
               IsCancel="True"/>
-      <Button Content="Save" Style="{StaticResource PrimaryButton}"
+      <Button Content="保存" Style="{StaticResource PrimaryButton}"
               IsDefault="True" Click="OnSaveClicked"/>
     </StackPanel>
   </Grid>

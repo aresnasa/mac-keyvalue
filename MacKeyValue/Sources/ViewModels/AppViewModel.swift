@@ -120,6 +120,7 @@ enum EntrySortOrder: String, CaseIterable, Identifiable {
 struct EntryFilterState: Equatable {
     var searchQuery: String = ""
     var selectedCategory: KeyValueEntry.Category? = nil
+    var selectedGroup: String? = nil
     var showFavoritesOnly: Bool = false
     var showPrivateOnly: Bool = false
     var sortOrder: EntrySortOrder = .dateUpdatedDesc
@@ -127,6 +128,7 @@ struct EntryFilterState: Equatable {
     var isActive: Bool {
         !searchQuery.isEmpty
             || selectedCategory != nil
+            || selectedGroup != nil
             || showFavoritesOnly
             || showPrivateOnly
     }
@@ -134,6 +136,7 @@ struct EntryFilterState: Equatable {
     mutating func reset() {
         searchQuery = ""
         selectedCategory = nil
+        selectedGroup = nil
         showFavoritesOnly = false
         showPrivateOnly = false
         sortOrder = .dateUpdatedDesc
@@ -178,6 +181,12 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var clipboardHistory: [ClipboardHistoryItem] = []
     @Published private(set) var favoriteEntries: [KeyValueEntry] = []
     @Published var selectedEntryId: UUID? = nil
+
+    /// All distinct non-empty group names across entries, sorted alphabetically.
+    var allGroups: [String] {
+        let groups = Set(entries.compactMap { $0.group.isEmpty ? nil : $0.group })
+        return groups.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
 
     // MARK: - Published – Filter State
     //
@@ -248,6 +257,7 @@ final class AppViewModel: ObservableObject {
     @Published var editingNotes: String = ""
     @Published var editingIsPrivate: Bool = false
     @Published var editingIsFavorite: Bool = false
+    @Published var editingGroup: String = ""
 
     // MARK: - Services
 
@@ -475,6 +485,11 @@ final class AppViewModel: ObservableObject {
             result = result.filter { $0.category == category }
         }
 
+        // Group filter
+        if let group = filterState.selectedGroup {
+            result = result.filter { $0.group == group }
+        }
+
         // Favorites only
         if filterState.showFavoritesOnly {
             result = result.filter { $0.isFavorite }
@@ -524,6 +539,7 @@ final class AppViewModel: ObservableObject {
         editingNotes = ""
         editingIsPrivate = false
         editingIsFavorite = false
+        editingGroup = ""
         activeSheet = .addEntry
     }
 
@@ -536,6 +552,7 @@ final class AppViewModel: ObservableObject {
         editingNotes = entry.notes
         editingIsPrivate = entry.isPrivate
         editingIsFavorite = entry.isFavorite
+        editingGroup = entry.group
 
         // Decrypt the value for editing
         do {
@@ -573,6 +590,7 @@ final class AppViewModel: ObservableObject {
                 encryptedValue: encryptedValue,
                 category: editingCategory,
                 tags: tags,
+                group: editingGroup.trimmingCharacters(in: .whitespaces),
                 isPrivate: editingIsPrivate,
                 isFavorite: editingIsFavorite,
                 notes: editingNotes
@@ -608,6 +626,7 @@ final class AppViewModel: ObservableObject {
             entry.category = editingCategory
             entry.tags = tags
             entry.notes = editingNotes
+            entry.group = editingGroup.trimmingCharacters(in: .whitespaces)
             entry.isPrivate = editingIsPrivate
             entry.isFavorite = editingIsFavorite
             entry.updatedAt = Date()
@@ -659,6 +678,15 @@ final class AppViewModel: ObservableObject {
     func togglePrivate(id: UUID) {
         guard var entry = storageService.getEntry(byId: id) else { return }
         entry.isPrivate.toggle()
+        entry.updatedAt = Date()
+        storageService.saveEntry(entry)
+        reloadEntries()
+    }
+
+    /// Sets the group of an entry.
+    func setEntryGroup(id: UUID, group: String) {
+        guard var entry = storageService.getEntry(byId: id) else { return }
+        entry.group = group
         entry.updatedAt = Date()
         storageService.saveEntry(entry)
         reloadEntries()

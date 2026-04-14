@@ -230,6 +230,7 @@ final class ImportExportService {
             guard let type = item["type"] as? Int else { continue }
             let title = (item["name"] as? String) ?? "Untitled"
             let notes = (item["notes"] as? String) ?? ""
+            let folderId = item["folderId"] as? String
             var username = ""
             var password = ""
             var urlString = ""
@@ -245,9 +246,16 @@ final class ImportExportService {
                 username = (card["cardholderName"] as? String) ?? ""
                 password = (card["number"] as? String) ?? ""
             }
+            // Resolve folder name from Bitwarden folders array
+            var groupName = ""
+            if let fid = folderId,
+               let folders = json["folders"] as? [[String: Any]] {
+                groupName = folders.first(where: { ($0["id"] as? String) == fid })?["name"] as? String ?? ""
+            }
             guard let entry = makeEntry(
                 title: title, username: username, password: password,
-                url: urlString, notes: notes, category: type == 1 ? .password : .other
+                url: urlString, notes: notes, group: groupName,
+                category: type == 1 ? .password : .other
             ) else { result.errors.append("Failed to encrypt '\(title)'"); continue }
             result.entries.append(entry)
             result.imported += 1
@@ -306,7 +314,7 @@ final class ImportExportService {
         let iNotes = h.firstIndex(where: { $0 == "extra" || $0 == "notes" })
         return buildResult(rows: Array(rows.dropFirst()),
                            iTitle: iTitle, iUser: iUser, iPass: iPass,
-                           iURL: iURL, iNotes: iNotes,
+                           iURL: iURL, iNotes: iNotes, iGroup: h.firstIndex(where: { $0 == "grouping" || $0 == "group" || $0 == "folder" }),
                            existingIds: existingIds,
                            format: .csvLastPass)
     }
@@ -325,7 +333,7 @@ final class ImportExportService {
         let iNotes = h.firstIndex(where: { $0.contains("comment") || $0 == "notes" })
         return buildResult(rows: Array(rows.dropFirst()),
                            iTitle: iTitle, iUser: iUser, iPass: iPass,
-                           iURL: iURL, iNotes: iNotes,
+                           iURL: iURL, iNotes: iNotes, iGroup: h.firstIndex(where: { $0 == "group" || $0 == "folder" }),
                            existingIds: existingIds,
                            format: .csvKeePass)
     }
@@ -344,7 +352,7 @@ final class ImportExportService {
         let iNotes = h.firstIndex(where: { $0.contains("note") || $0.contains("comment") || $0.contains("extra") })
         return buildResult(rows: Array(rows.dropFirst()),
                            iTitle: iTitle, iUser: iUser, iPass: iPass,
-                           iURL: iURL, iNotes: iNotes,
+                           iURL: iURL, iNotes: iNotes, iGroup: h.firstIndex(where: { $0 == "group" || $0 == "grouping" || $0 == "folder" }),
                            existingIds: existingIds,
                            format: .csvGeneric)
     }
@@ -353,6 +361,7 @@ final class ImportExportService {
 
     private func buildResult(rows: [[String]], iTitle: Int?, iUser: Int?,
                              iPass: Int?, iURL: Int?, iNotes: Int?,
+                             iGroup: Int? = nil,
                              existingIds: Set<UUID>,
                              format: ImportFormat) -> ImportResult {
         var result = ImportResult(detectedFormat: format)
@@ -363,9 +372,10 @@ final class ImportExportService {
             let password = iPass.flatMap  { $0 < row.count ? row[$0] : nil } ?? ""
             let url      = iURL.flatMap   { $0 < row.count ? row[$0] : nil } ?? ""
             let notes    = iNotes.flatMap { $0 < row.count ? row[$0] : nil } ?? ""
+            let group    = iGroup.flatMap { $0 < row.count ? row[$0] : nil } ?? ""
             guard let entry = makeEntry(
                 title: title.isEmpty ? "Untitled" : title,
-                username: username, password: password, url: url, notes: notes
+                username: username, password: password, url: url, notes: notes, group: group
             ) else { result.errors.append("Failed to encrypt '\(title)'"); continue }
             result.entries.append(entry)
             result.imported += 1
@@ -377,6 +387,7 @@ final class ImportExportService {
 
     private func makeEntry(title: String, username: String, password: String,
                            url: String = "", notes: String = "",
+                           group: String = "",
                            category: KeyValueEntry.Category = .password) -> KeyValueEntry? {
         do {
             let encrypted = password.isEmpty
@@ -388,6 +399,7 @@ final class ImportExportService {
                 url: url,
                 encryptedValue: encrypted,
                 category: category,
+                group: group,
                 notes: notes
             )
         } catch {

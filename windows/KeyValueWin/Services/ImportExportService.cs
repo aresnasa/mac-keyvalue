@@ -61,7 +61,7 @@ public sealed class ImportExportService
     public byte[] ExportToCsv(IEnumerable<KeyValueEntry> entries, bool decryptValues = true)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("name,username,password,url,notes,category,tags,favorite,created");
+        sb.AppendLine("name,username,password,url,notes,category,tags,group,favorite,created");
         foreach (var e in entries)
         {
             var pw = string.Empty;
@@ -74,6 +74,7 @@ public sealed class ImportExportService
                 CsvEscape(e.Title), CsvEscape(e.Key), CsvEscape(pw),
                 CsvEscape(e.Url),   CsvEscape(e.Notes), e.Category,
                 CsvEscape(string.Join(";", e.Tags)),
+                CsvEscape(e.Group),
                 e.IsFavorite ? "1" : "0", e.CreatedAt));
         }
         return Encoding.UTF8.GetBytes(sb.ToString());
@@ -101,10 +102,25 @@ public sealed class ImportExportService
         using var doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("items", out var items)) return (entries, "No items");
 
+        // Build folder ID → name map for group assignment
+        var folderMap = new Dictionary<string, string>();
+        if (doc.RootElement.TryGetProperty("folders", out var folders))
+        {
+            foreach (var f in folders.EnumerateArray())
+            {
+                var fid = f.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "";
+                var fname = f.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
+                if (!string.IsNullOrEmpty(fid) && !string.IsNullOrEmpty(fname))
+                    folderMap[fid] = fname;
+            }
+        }
+
         foreach (var item in items.EnumerateArray())
         {
             var title = item.TryGetProperty("name", out var n) ? n.GetString() ?? "Untitled" : "Untitled";
             var notes = item.TryGetProperty("notes", out var no) ? no.GetString() ?? "" : "";
+            var folderId = item.TryGetProperty("folderId", out var fv) ? fv.GetString() ?? "" : "";
+            var groupName = !string.IsNullOrEmpty(folderId) && folderMap.TryGetValue(folderId, out var gn) ? gn : "";
             var username = "";
             var password = "";
             var url = "";
@@ -117,7 +133,7 @@ public sealed class ImportExportService
                     url = uris[0].TryGetProperty("uri", out var uri) ? uri.GetString() ?? "" : "";
             }
 
-            var entry = MakeEntry(title, username, password, url, notes);
+            var entry = MakeEntry(title, username, password, url, notes, group: groupName);
             if (entry is not null) entries.Add(entry);
         }
         return (entries, $"Imported {entries.Count} entries from Bitwarden");
@@ -134,6 +150,7 @@ public sealed class ImportExportService
         int? iPass  = FindCol(header, "password", "pass");
         int? iUrl   = FindCol(header, "url", "website", "web site", "uri");
         int? iNotes = FindCol(header, "notes", "extra", "comment");
+        int? iGroup = FindCol(header, "group", "grouping", "folder");
 
         var entries = new List<KeyValueEntry>();
         foreach (var row in rows.Skip(1))
@@ -145,7 +162,8 @@ public sealed class ImportExportService
                 username: Get(iUser),
                 password: Get(iPass),
                 url:      Get(iUrl),
-                notes:    Get(iNotes));
+                notes:    Get(iNotes),
+                group:    Get(iGroup));
             if (entry is not null) entries.Add(entry);
         }
         return (entries, $"Imported {entries.Count} entries from CSV");
@@ -165,7 +183,7 @@ public sealed class ImportExportService
 
     private static KeyValueEntry? MakeEntry(string title, string username,
         string password, string url = "", string notes = "",
-        string category = "password")
+        string category = "password", string group = "")
     {
         try
         {
@@ -179,6 +197,7 @@ public sealed class ImportExportService
                 Url            = url,
                 EncryptedValue = encrypted,
                 Category       = category,
+                Group          = group,
                 Notes          = notes
             };
         }

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using KeyValueWin.Models;
 
 namespace KeyValueWin.Services;
@@ -106,6 +107,34 @@ public sealed class StorageService
     public IReadOnlyList<KeyValueEntry> Search(string query)
     {
         if (string.IsNullOrWhiteSpace(query)) return GetAll();
+
+        // Regex mode: /pattern/ — matches Mac behavior
+        if (query.Length >= 2 && query.StartsWith('/') && query.EndsWith('/'))
+        {
+            var pattern = query[1..^1];
+            try
+            {
+                var regex = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled,
+                    TimeSpan.FromSeconds(1));
+                lock (_lock)
+                {
+                    return _entries.Where(e =>
+                        regex.IsMatch(e.Title)
+                        || regex.IsMatch(e.Key)
+                        || regex.IsMatch(e.Url)
+                        || regex.IsMatch(e.Notes)
+                        || regex.IsMatch(e.Group)
+                        || (e.Tags != null && e.Tags.Any(t => regex.IsMatch(t)))
+                    ).ToList();
+                }
+            }
+            catch (RegexParseException)
+            {
+                // Invalid regex — fall through to literal search
+            }
+        }
+
+        // Literal substring search
         var q = query.ToLowerInvariant();
         lock (_lock)
         {
@@ -114,7 +143,7 @@ public sealed class StorageService
                 || e.Key.Contains(q, StringComparison.OrdinalIgnoreCase)
                 || e.Url.Contains(q, StringComparison.OrdinalIgnoreCase)
                 || e.Notes.Contains(q, StringComparison.OrdinalIgnoreCase)
-                // Guard against Tags being null (e.g. from "tags": null in JSON)
+                || e.Group.Contains(q, StringComparison.OrdinalIgnoreCase)
                 || (e.Tags != null && e.Tags.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase)))
             ).ToList();
         }

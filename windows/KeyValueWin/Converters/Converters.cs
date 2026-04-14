@@ -51,8 +51,13 @@ public class InvertBoolConverter : IValueConverter
 
 public class BoolToFavoriteStarConverter : IValueConverter
 {
-    public object Convert(object? value, Type t, object? p, CultureInfo c) =>
-        value is true ? "⭐  Favorited" : "☆  Favorite";
+    public object Convert(object? value, Type t, object? p, CultureInfo c)
+    {
+        var param = p as string ?? "";
+        if (param == "privacy")
+            return value is true ? "🔒  隐私开" : "👁  隐私关";
+        return value is true ? "⭐  已收藏" : "☆  收藏";
+    }
     public object ConvertBack(object? v, Type t, object? p, CultureInfo c) => Binding.DoNothing;
 }
 

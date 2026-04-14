@@ -237,6 +237,17 @@ struct CompactEntryRow: View {
                             .font(.system(size: 8))
                             .foregroundStyle(Color(red: 0.80, green: 0.65, blue: 0.20))
                     }
+                    if !entry.group.isEmpty {
+                        Text(entry.group)
+                            .font(.system(size: 9))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Color.cyan.opacity(0.12))
+                            )
+                            .foregroundStyle(.cyan)
+                    }
                 }
                 HStack(spacing: 6) {
                     Text(entry.key)
@@ -332,6 +343,24 @@ struct CompactEntryRow: View {
         Button(entry.isFavorite ? "取消收藏" : "收藏") {
             viewModel.toggleFavorite(id: entry.id)
         }
+        Button(entry.isPrivate ? "取消私密" : "设为私密") {
+            viewModel.togglePrivate(id: entry.id)
+        }
+
+        Menu("分组") {
+            Button(entry.group.isEmpty ? "✓ 无分组" : "无分组") {
+                viewModel.setEntryGroup(id: entry.id, group: "")
+            }
+            if !viewModel.allGroups.isEmpty {
+                Divider()
+                ForEach(viewModel.allGroups, id: \.self) { group in
+                    Button(entry.group == group ? "✓ \(group)" : group) {
+                        viewModel.setEntryGroup(id: entry.id, group: group)
+                    }
+                }
+            }
+        }
+
         Divider()
         Button("删除", role: .destructive) {
             viewModel.deleteEntry(id: entry.id)

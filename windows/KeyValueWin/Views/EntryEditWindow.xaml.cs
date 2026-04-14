@@ -23,18 +23,19 @@ public partial class EntryEditWindow : Window
         if (entry is not null)
             PopulateFields(entry);
         else
-            TitleLabel.Text = "New Entry";
+            TitleLabel.Text = "新建条目";
     }
 
     // ── Field population ──────────────────────────────────────────────────────
 
     private void PopulateFields(KeyValueEntry entry)
     {
-        TitleLabel.Text   = "Edit Entry";
-        Title             = "Edit Entry";
+        TitleLabel.Text   = "编辑条目";
+        Title             = "编辑条目";
         TxtTitle.Text     = entry.Title;
         TxtKey.Text       = entry.Key;
         TxtUrl.Text       = entry.Url;
+        TxtGroup.Text     = entry.Group;
         TxtNotes.Text     = entry.Notes;
         TxtTags.Text      = string.Join(", ", entry.Tags);
         ChkFavorite.IsChecked = entry.IsFavorite;
@@ -94,7 +95,7 @@ public partial class EntryEditWindow : Window
         var title = TxtTitle.Text.Trim();
         if (string.IsNullOrEmpty(title))
         {
-            MessageBox.Show("Title is required.", "Validation", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("标题不能为空。", "验证", MessageBoxButton.OK, MessageBoxImage.Warning);
             TxtTitle.Focus();
             return;
         }
@@ -122,6 +123,7 @@ public partial class EntryEditWindow : Window
         entry.Title      = title;
         entry.Key        = TxtKey.Text.Trim();
         entry.Url        = TxtUrl.Text.Trim();
+        entry.Group      = TxtGroup.Text.Trim();
         entry.Notes      = TxtNotes.Text.Trim();
         entry.Tags       = tags;
         entry.Category   = category;
@@ -155,6 +157,7 @@ public partial class EntryEditWindow : Window
         Id        = src.Id,
         CreatedAt = src.CreatedAt,
         UsageCount = src.UsageCount,
-        LastUsedAt = src.LastUsedAt
+        LastUsedAt = src.LastUsedAt,
+        Group     = src.Group
     };
 }

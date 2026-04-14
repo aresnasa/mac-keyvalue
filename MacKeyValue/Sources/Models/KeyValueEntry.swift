@@ -11,6 +11,7 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
     var encryptedValue: Data
     var category: Category
     var tags: [String]
+    var group: String
     var isPrivate: Bool
     var isFavorite: Bool
     var createdAt: Date
@@ -61,6 +62,7 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
         encryptedValue: Data = Data(),
         category: Category = .other,
         tags: [String] = [],
+        group: String = "",
         isPrivate: Bool = false,
         isFavorite: Bool = false,
         createdAt: Date = Date(),
@@ -76,6 +78,7 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
         self.encryptedValue = encryptedValue
         self.category = category
         self.tags = tags
+        self.group = group
         self.isPrivate = isPrivate
         self.isFavorite = isFavorite
         self.createdAt = createdAt
@@ -107,6 +110,7 @@ struct KeyValueEntry: Identifiable, Codable, Hashable {
         url           = (try? c.decodeIfPresent(String.self,   forKey: .url))        ?? ""
         category      = (try? c.decodeIfPresent(Category.self, forKey: .category))   ?? .other
         tags          = (try? c.decodeIfPresent([String].self,  forKey: .tags))       ?? []
+        group         = (try? c.decodeIfPresent(String.self,    forKey: .group))      ?? ""
         isPrivate     = (try? c.decodeIfPresent(Bool.self,      forKey: .isPrivate))  ?? false
         isFavorite    = (try? c.decodeIfPresent(Bool.self,      forKey: .isFavorite)) ?? false
         createdAt     = (try? c.decodeIfPresent(Date.self,      forKey: .createdAt))  ?? Date()
