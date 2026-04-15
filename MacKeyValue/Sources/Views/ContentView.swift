@@ -1305,6 +1305,7 @@ struct EntryEditorSheet: View {
     let mode: Mode
     @EnvironmentObject var viewModel: AppViewModel
     @Environment(\.dismiss) var dismiss
+    @State private var showValue = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -1315,11 +1316,22 @@ struct EntryEditorSheet: View {
                 TextField("标题", text: $viewModel.editingTitle)
                 TextField("键名", text: $viewModel.editingKey)
 
-                if viewModel.editingCategory == .password {
-                    SecureField("值", text: $viewModel.editingValue)
-                } else {
-                    TextEditor(text: $viewModel.editingValue)
-                        .frame(minHeight: 80)
+                Section {
+                    if viewModel.editingCategory == .password && !showValue {
+                        SecureField("值", text: $viewModel.editingValue)
+                    } else {
+                        TextEditor(text: $viewModel.editingValue)
+                            .frame(minHeight: 80)
+                            .font(.system(.body, design: .monospaced))
+                            .scrollContentBackground(.hidden)
+                    }
+                    if viewModel.editingCategory == .password {
+                        Toggle("显示密码", isOn: $showValue)
+                            .toggleStyle(.switch)
+                            .font(.caption)
+                    }
+                } header: {
+                    Text("值")
                 }
 
                 Picker("分类", selection: $viewModel.editingCategory) {
@@ -1364,7 +1376,7 @@ struct EntryEditorSheet: View {
                         viewModel.updateEntry(id: id)
                     }
                 }
-                .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.editingTitle.isEmpty || viewModel.editingKey.isEmpty)
             }

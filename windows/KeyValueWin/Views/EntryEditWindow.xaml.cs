@@ -71,17 +71,37 @@ public partial class EntryEditWindow : Window
 
     private void OnShowPasswordChanged(object sender, RoutedEventArgs e)
     {
-        bool show = ChkShow.IsChecked == true;
+        UpdateValueFieldVisibility();
+    }
 
-        if (show)
+    private void OnCategoryChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Auto-show multi-line TextBox for non-password categories
+        UpdateValueFieldVisibility();
+    }
+
+    /// Switches between PasswordBox (single-line) and TextBox (multi-line) based
+    /// on category selection and "show password" toggle.
+    private void UpdateValueFieldVisibility()
+    {
+        if (PwdValue == null || TxtValuePlain == null || CboCategory == null || ChkShow == null)
+            return;
+
+        var isPassword = (CboCategory.SelectedItem is ComboBoxItem sel)
+                         && sel.Tag?.ToString() == "password";
+        bool showPlain = !isPassword || ChkShow.IsChecked == true;
+
+        if (showPlain)
         {
-            TxtValuePlain.Text    = PwdValue.Password;
+            if (PwdValue.Visibility == Visibility.Visible)
+                TxtValuePlain.Text = PwdValue.Password;
             TxtValuePlain.Visibility = Visibility.Visible;
             PwdValue.Visibility      = Visibility.Collapsed;
         }
         else
         {
-            PwdValue.Password        = TxtValuePlain.Text;
+            if (TxtValuePlain.Visibility == Visibility.Visible)
+                PwdValue.Password = TxtValuePlain.Text;
             PwdValue.Visibility      = Visibility.Visible;
             TxtValuePlain.Visibility = Visibility.Collapsed;
         }
@@ -101,7 +121,7 @@ public partial class EntryEditWindow : Window
         }
 
         // Resolve plaintext value from whichever field is visible
-        var plainValue = ChkShow.IsChecked == true
+        var plainValue = TxtValuePlain.Visibility == Visibility.Visible
             ? TxtValuePlain.Text
             : PwdValue.Password;
 

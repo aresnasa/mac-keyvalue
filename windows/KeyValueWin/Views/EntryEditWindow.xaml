@@ -37,7 +37,9 @@
           <Grid>
             <PasswordBox x:Name="PwdValue" FontSize="14" Padding="8,6"
                          BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"/>
-            <TextBox x:Name="TxtValuePlain" FontSize="13" Visibility="Collapsed"/>
+            <TextBox x:Name="TxtValuePlain" FontSize="13" Visibility="Collapsed"
+                     AcceptsReturn="True" TextWrapping="Wrap" Height="80"
+                     VerticalScrollBarVisibility="Auto"/>
           </Grid>
           <StackPanel Orientation="Horizontal" h:StackPanelHelper.Spacing="6">
             <CheckBox Content="显示密码" x:Name="ChkShow"
@@ -62,7 +64,8 @@
           <TextBlock Text="分类" FontSize="11" FontWeight="SemiBold"
                      Foreground="{StaticResource TextSecondary}"/>
           <ComboBox x:Name="CboCategory" FontSize="13"
-                    Padding="8,6" BorderBrush="{StaticResource BorderBrush}">
+                    Padding="8,6" BorderBrush="{StaticResource BorderBrush}"
+                    SelectionChanged="OnCategoryChanged">
             <ComboBoxItem Content="🔒  密码" Tag="password" IsSelected="True"/>
             <ComboBoxItem Content="📄  代码片段"  Tag="snippet"/>
             <ComboBoxItem Content="📋  剪贴板" Tag="clipboard"/>
