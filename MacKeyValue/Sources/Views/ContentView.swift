@@ -311,7 +311,7 @@ struct SidebarView: View {
                             icon: "folder.fill",
                             count: count,
                             isSelected: viewModel.filterState.selectedGroup == group,
-                            tintColor: .cyan
+                            tintColor: .teal
                         ) {
                             viewModel.filterState.selectedGroup = group
                             viewModel.filterState.selectedCategory = nil
@@ -558,9 +558,9 @@ struct EntryRowView: View {
                         .padding(.vertical, 1)
                         .background(
                             Capsule()
-                                .fill(Color.cyan.opacity(0.15))
+                                .fill(Color.teal.opacity(0.15))
                         )
-                        .foregroundStyle(.cyan)
+                        .foregroundStyle(.primary)
                 }
 
                 Spacer()
@@ -667,9 +667,9 @@ struct EntryDetailView: View {
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(
-                                        Capsule().fill(Color.cyan.opacity(0.15))
+                                        Capsule().fill(Color.teal.opacity(0.15))
                                     )
-                                    .foregroundStyle(.cyan)
+                                    .foregroundStyle(.teal)
                             }
                         }
 

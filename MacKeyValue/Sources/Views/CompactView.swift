@@ -244,9 +244,9 @@ struct CompactEntryRow: View {
                             .padding(.vertical, 1)
                             .background(
                                 RoundedRectangle(cornerRadius: 3)
-                                    .fill(Color.cyan.opacity(0.12))
+                                    .fill(Color.teal.opacity(0.12))
                             )
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(.teal)
                     }
                 }
                 HStack(spacing: 6) {
