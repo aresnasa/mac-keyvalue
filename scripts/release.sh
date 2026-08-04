@@ -356,7 +356,7 @@ build_cask_content() {
     strategy :github_latest
   end
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "${APP_NAME}.app"
 
