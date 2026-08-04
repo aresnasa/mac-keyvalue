@@ -86,7 +86,6 @@ struct MacKeyValueApp: App {
                 Button("剪贴板历史") {
                     viewModel.activeSheet = .clipboardHistory
                 }
-                .keyboardShortcut("v", modifiers: [.command, .shift])
 
                 Button("清除剪贴板") {
                     viewModel.clearClipboard()
@@ -390,6 +389,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // signature → the old TCC entry is invalidated.  We proactively
         // detect this and guide the user through re-granting.
         let clipboardService = ClipboardService.shared
+
+        // A new signed build may need a fresh Accessibility grant. Handle this
+        // before the normal permission prompt so the guide targets this build,
+        // and gracefully close only duplicate instances with an older version.
+        _ = AppUpgradeAuthorizationService.prepareForLaunch()
 
         // Print full diagnostics on startup for troubleshooting.
         clipboardService.printDiagnostics()

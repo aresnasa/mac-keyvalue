@@ -220,6 +220,11 @@ final class HotkeyService: ObservableObject {
     /// Reference to the installed Carbon event handler.
     private var eventHandlerRef: EventHandlerRef?
 
+    /// Handles clipboard-history shortcuts only while MacKeyValue is active.
+    /// Unlike Carbon global hotkeys, this never intercepts keyboard events in
+    /// another application.
+    private var clipboardHistoryEventMonitor: Any?
+
     private let persistenceQueue = DispatchQueue(label: "com.mackeyvalue.hotkey.persistence")
 
     private let encoder: JSONEncoder = {
@@ -244,6 +249,7 @@ final class HotkeyService: ObservableObject {
     deinit {
         unregisterAll()
         removeEventHandler()
+        removeClipboardHistoryEventMonitor()
     }
 
     // MARK: - Setup & Teardown
@@ -253,6 +259,7 @@ final class HotkeyService: ObservableObject {
         guard !isListening else { return }
         installEventHandler()
         registerAllPersistedBindings()
+        installClipboardHistoryEventMonitor()
         isListening = true
     }
 
@@ -260,6 +267,7 @@ final class HotkeyService: ObservableObject {
     func stop() {
         unregisterAll()
         removeEventHandler()
+        removeClipboardHistoryEventMonitor()
         isListening = false
     }
 
@@ -459,6 +467,39 @@ final class HotkeyService: ObservableObject {
         }
     }
 
+
+    /// Adds a process-local keyboard monitor for the clipboard history action.
+    /// The monitor is installed only in MacKeyValue's event loop, so other apps
+    /// keep receiving their own ⌘⇧V (or customized) shortcuts normally.
+    private func installClipboardHistoryEventMonitor() {
+        guard clipboardHistoryEventMonitor == nil else { return }
+
+        clipboardHistoryEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard
+                let self,
+                NSApp.isActive,
+                let binding = self.bindings.first(where: {
+                    $0.isEnabled
+                        && $0.actionType == .showClipboardHistory
+                        && $0.keyCombo.keyCode == UInt32(event.keyCode)
+                        && $0.keyCombo.modifiers == KeyCombo.cocoaToCarbonModifiers(event.modifierFlags)
+                })
+            else {
+                return event
+            }
+
+            self.executeAction(for: binding)
+            return nil
+        }
+    }
+
+    private func removeClipboardHistoryEventMonitor() {
+        if let monitor = clipboardHistoryEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            clipboardHistoryEventMonitor = nil
+        }
+    }
+
     /// Called by the Carbon event handler when a registered hotkey is pressed.
     private func handleCarbonHotkeyEvent(_ event: EventRef?) -> OSStatus {
         guard let event = event else { return OSStatus(eventNotHandledErr) }
@@ -499,6 +540,10 @@ final class HotkeyService: ObservableObject {
 
     /// Registers a Carbon hotkey for the given binding and stores the ref.
     private func registerCarbonHotkey(_ binding: inout HotkeyBinding) throws {
+        // Clipboard history is intentionally local-only. Registering it with
+        // Carbon would consume ⌘⇧V in every app, even when no UI is shown.
+        guard binding.actionType != .showClipboardHistory else { return }
+
         let hotkeyId = nextHotkeyId
         nextHotkeyId += 1
 

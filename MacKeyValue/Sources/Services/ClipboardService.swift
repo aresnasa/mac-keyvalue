@@ -660,6 +660,43 @@ final class ClipboardService: ObservableObject, @unchecked Sendable {
         return true
     }
 
+
+    /// Clears this app's Accessibility TCC record before requesting a fresh
+    /// grant for a newly installed build. This is intentionally scoped to the
+    /// current bundle identifier and never resets permissions for other apps.
+    @discardableResult
+    func resetAccessibilityAuthorizationForAppUpgrade() -> Bool {
+        guard !AXIsProcessTrusted() else { return true }
+        guard Bundle.main.bundlePath.hasSuffix(".app"), let bundleId = Bundle.main.bundleIdentifier else {
+            return false
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", bundleId]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: outputData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard process.terminationStatus == 0 else {
+                print("[UpgradeAuthorization] tccutil reset failed (\(process.terminationStatus)): \(output)")
+                return false
+            }
+
+            print("[UpgradeAuthorization] Reset Accessibility authorization for \(bundleId)\(output.isEmpty ? "" : ": \(output)")")
+            return true
+        } catch {
+            print("[UpgradeAuthorization] Unable to run tccutil: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Attempts to **automatically grant** Accessibility permission by writing
     /// directly to the TCC database with administrator privileges.
     ///

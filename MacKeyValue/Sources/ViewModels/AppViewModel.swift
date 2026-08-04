@@ -1137,6 +1137,9 @@ final class AppViewModel: ObservableObject {
         case .quickSearch:
             activeSheet = .quickSearch
         case .showClipboardHistory:
+            // Clipboard history is a local-only command. Never activate or
+            // overlay MacKeyValue while the user is working in another app.
+            guard NSApp.isActive else { return }
             activeSheet = .clipboardHistory
         case .togglePrivacyMode:
             isPrivacyMode.toggle()
